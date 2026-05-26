@@ -1,0 +1,3 @@
+int I; 
+float j; 
+I = j;
