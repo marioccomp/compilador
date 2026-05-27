@@ -253,23 +253,38 @@ WHILE		: INICIO_WHILE BLOCO
 				$$.traducao = traducao;
 			}
 			;
-DO_WHILE	: TK_DO BLOCO QUEBRAS TK_WHILE '(' E ')'
+INICIO_DO	: TK_DO
+			{
+				string inicio = get_label_temp("inicio_do_while");
+				string fim = get_label_temp("fim_do_while");
+				$$.label = fim;
+				$$.tipo = inicio;
+				pilha_break.push_back(fim);
+			}
+			;
+DO_WHILE	: INICIO_DO BLOCO QUEBRAS TK_WHILE '(' E ')'
 			{
 				if($6.tipo != "bool") {
 					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
 					exit(1);
 				}
 				string exp = $6.traducao;
-				string inicio = get_label_temp("inicio_do_while");
+				string inicio = $1.tipo;
+				string fim = $1.label;
 				string traducao = inicio + ":\n";
 
 				traducao += $2.traducao + exp + "\tif (" + $6.label + ") goto " + inicio + ";\n";
+				traducao += fim + ":\n";
+				pilha_break.pop_back();
 				$$.traducao = traducao;
 			}
 			;
 ABRE_FOR	: TK_FOR '('
 			{
 				abrir_escopo();
+				string fim_for = get_label_temp("fim_for");
+				$$.label = fim_for;
+				pilha_break.push_back(fim_for);
 			}
 			;
 FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
@@ -280,7 +295,7 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				}
 				string traducao = $2.traducao;
 				string inicio_for = get_label_temp("inicio_for");
-				string fim_for = get_label_temp("fim_for");
+				string fim_for = $1.label;
 				traducao += inicio_for + ":\n" + $4.traducao;
 				string temp = gentempcode();
 				addVar(temp, "bool");
@@ -289,6 +304,7 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				traducao += $6.traducao + "\tgoto " + inicio_for + ";\n";
 				traducao += fim_for + ":\n";
 				fechar_escopo();
+				pilha_break.pop_back();
 				$$.traducao = traducao;
 			}
 			;
@@ -536,7 +552,6 @@ E 			: E '+' E
 			}
 			| E TK_RELACIONAL E
 			{
-
 				if(!relacionalCompativel($2.label, $1.tipo, $3.tipo)) {
 					yyerror("Operacao relacional invalida: " + $1.tipo + " " + $2.label + " " + $3.tipo);
 					exit(1);
