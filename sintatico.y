@@ -26,6 +26,7 @@ struct variavel
 
 vector<map<string, variavel>> tabelas;
 vector<string> pilha_break;
+vector<string> pilha_continue;
 
 
 struct atributos
@@ -72,6 +73,12 @@ bool exists_var_escopo_atual(string nome);
 %token TK_ELSE
 %token TK_FOR
 %token TK_BREAK
+%token TK_CONTINUE
+%token TK_CIN
+%token TK_COUT
+%token TK_LL
+%token TK_RR
+%token TK_STRING
 
 %start S
 
@@ -165,6 +172,18 @@ CMD			: E
 			{
 				$$.traducao = $1.traducao;	
 			}
+			| CONTINUE
+			{
+				$$.traducao = $1.traducao;	
+			}
+			| CIN
+			{
+				$$.traducao = $1.traducao;
+			}
+			| COUT
+			{
+				$$.traducao = $1.traducao;
+			}
 			;
 
 ABRE_BLOCO	: '{'
@@ -226,30 +245,34 @@ IF			: TK_IF '(' E ')' BLOCO  // aqui fiquei com algumas duvidas sobre oq aceita
 			}
 
 			;
-INICIO_WHILE : TK_WHILE '(' E ')'
+INICIO_WHILE : TK_WHILE 
+			{
+				
+				string fim = get_label_temp("fim_while");
+				string inicio = get_label_temp("inicio_while");
+				pilha_break.push_back(fim);
+				pilha_continue.push_back(inicio);
+
+				$$.label = fim;
+				$$.tipo = inicio;
+				
+			}
+			;
+WHILE		: INICIO_WHILE '(' E ')' BLOCO
 			{
 				if($3.tipo != "bool") {
 					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
 					exit(1);
 				}
-				string exp = $3.traducao;
-				string fim = get_label_temp("fim_while");
-				pilha_break.push_back(fim);
 
-				$$.label = fim;
-				$$.traducao = $3.traducao;
-				$$.tipo = $3.label;
-			}
-			;
-WHILE		: INICIO_WHILE BLOCO
-			{
-				string inicio = get_label_temp("inicio_while");
-				string traducao = inicio + ":\n" + $1.traducao;
+				string inicio = $1.tipo;
+				string traducao = inicio + ":\n" + $3.traducao;
 				string temp = gentempcode();
 				addVar(temp, "bool");
-				traducao += "\t" + temp + " = !" + $1.tipo + ";\n\tif " + "(" + temp + ") goto " + $1.label + ";\n";
-				traducao += $2.traducao + "\tgoto " + inicio + ";\n" + $1.label + ":\n";
+				traducao += "\t" + temp + " = !" + $3.label + ";\n\tif " + "(" + temp + ") goto " + $1.label + ";\n";
+				traducao += $5.traducao + "\tgoto " + inicio + ";\n" + $1.label + ":\n";
 				pilha_break.pop_back();
+				pilha_continue.pop_back();
 				$$.traducao = traducao;
 			}
 			;
@@ -260,6 +283,7 @@ INICIO_DO	: TK_DO
 				$$.label = fim;
 				$$.tipo = inicio;
 				pilha_break.push_back(fim);
+				pilha_continue.push_back(inicio);
 			}
 			;
 DO_WHILE	: INICIO_DO BLOCO QUEBRAS TK_WHILE '(' E ')'
@@ -276,6 +300,7 @@ DO_WHILE	: INICIO_DO BLOCO QUEBRAS TK_WHILE '(' E ')'
 				traducao += $2.traducao + exp + "\tif (" + $6.label + ") goto " + inicio + ";\n";
 				traducao += fim + ":\n";
 				pilha_break.pop_back();
+				pilha_continue.pop_back();
 				$$.traducao = traducao;
 			}
 			;
@@ -283,8 +308,11 @@ ABRE_FOR	: TK_FOR '('
 			{
 				abrir_escopo();
 				string fim_for = get_label_temp("fim_for");
+				string inicio_for = get_label_temp("inicio_for");
 				$$.label = fim_for;
+				$$.tipo = inicio_for;
 				pilha_break.push_back(fim_for);
+				pilha_continue.push_back(inicio_for);
 			}
 			;
 FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
@@ -294,7 +322,7 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 					exit(1);
 				}
 				string traducao = $2.traducao;
-				string inicio_for = get_label_temp("inicio_for");
+				string inicio_for = $1.tipo;
 				string fim_for = $1.label;
 				traducao += inicio_for + ":\n" + $4.traducao;
 				string temp = gentempcode();
@@ -305,6 +333,7 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				traducao += fim_for + ":\n";
 				fechar_escopo();
 				pilha_break.pop_back();
+				pilha_continue.pop_back();
 				$$.traducao = traducao;
 			}
 			;
@@ -315,6 +344,16 @@ BREAK		: TK_BREAK
 					exit(1);
 				}
 				string traducao = "\tgoto " + pilha_break.back() + ";\n";
+				$$.traducao = traducao;
+			}
+			;
+CONTINUE		: TK_CONTINUE
+			{
+				if(pilha_continue.empty()) {
+					yyerror("Nao existe loop para dar continue");
+					exit(1);
+				}
+				string traducao = "\tgoto " + pilha_continue.back() + ";\n";
 				$$.traducao = traducao;
 			}
 			;
@@ -354,6 +393,41 @@ VALOR		: TK_TRUE
 			| TK_FLOAT_LIT
 			{
 				$$.tipo = "float";
+			}
+			;
+CIN			: TK_CIN TK_RR TK_ID
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel " + $3.label + " nao foi declarada anteriormente");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+
+				string traducao = "\tcin >> " + var->nome_interno + ";\n";
+				$$.traducao = traducao;		
+			}
+			;
+COUT		: TK_COUT TK_LL TK_ID
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel " + $3.label + " nao foi declarada anteriormente");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+
+				string traducao = "\tcout << " + var->nome_interno + ";\n";
+				$$.traducao = traducao;		
+			}
+			| TK_COUT TK_LL TK_STRING
+			{
+				string traducao = "\tcout << " + $3.label + ";\n";
+				$$.traducao = traducao;	
 			}
 			;
 E 			: E '+' E

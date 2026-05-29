@@ -56,6 +56,12 @@ NUM {DIGITO}+
 (?i:else)   {yylval.label = yytext; return TK_ELSE;}
 (?i:for)    {yylval.label = yytext; return TK_FOR;}
 (?i:break)  {return TK_BREAK;}
+(?i:continue)  {return TK_CONTINUE;}
+(?i:cin)    {return TK_CIN;}
+(?i:cout)    {return TK_COUT;}
+">>"        {return TK_RR;}
+"<<"        {return TK_LL;}
+\"[^\"]*\" { yylval.label = yytext; return TK_STRING;}
 
 
 {VAR}       { yylval.label = yytext; return TK_ID; }
