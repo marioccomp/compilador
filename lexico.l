@@ -50,6 +50,7 @@ NUM {DIGITO}+
 "&&"        {yylval.label = yytext; return TK_AND;}
 "!"         {yylval.label = yytext; return TK_NOT;}
 ";"         {return ';';}
+":"         {return ':';}
 (?i:if)      {yylval.label = yytext; return TK_IF;}
 (?i:while)    {yylval.label = yytext; return TK_WHILE;}
 (?i:do) {yylval.label = yytext; return TK_DO;}
@@ -61,7 +62,11 @@ NUM {DIGITO}+
 (?i:cout)    {return TK_COUT;}
 ">>"        {return TK_RR;}
 "<<"        {return TK_LL;}
-\"[^\"]*\" { yylval.label = yytext; return TK_STRING;}
+\"[^\"]*\" { yylval.label = yytext; return TK_STRING_LIT;}
+(?i:string) { yylval.label = yytext; return TK_STRING;}
+"switch"   { return TK_SWITCH; }
+"case"     { return TK_CASE; }
+"default"  { return TK_DEFAULT; }
 
 
 {VAR}       { yylval.label = yytext; return TK_ID; }

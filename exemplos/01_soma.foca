@@ -1,1 +1,13 @@
-cout << "aaa"
+string x;
+x = "2";
+
+switch (x) {
+    case "a":
+        cout << "um";
+    case "b":
+        cout << "dois";
+    case "c":
+        cout << "tres";
+    default:
+        cout << "outro";
+}

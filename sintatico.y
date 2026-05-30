@@ -22,11 +22,14 @@ struct variavel
 	string nome_interno;
 	string tipo;
 	string valor;
+	string tam;
 };
 
 vector<map<string, variavel>> tabelas;
 vector<string> pilha_break;
 vector<string> pilha_continue;
+vector<string> pilha_switch_expr;
+vector<string> pilha_switch_tipo;
 
 
 struct atributos
@@ -34,6 +37,12 @@ struct atributos
 	string label;
 	string traducao;
 	string tipo;
+	string tam;
+
+	string teste;
+    string corpo;
+    string default_label;
+    bool tem_default;
 };
 
 int yylex(void);
@@ -51,6 +60,9 @@ bool logicoCompativel(string t1, string t2);
 void abrir_escopo();
 void fechar_escopo();
 bool exists_var_escopo_atual(string nome);
+bool somaCompativel(string t1, string t2);
+bool operacao_compativel(string t1, string t2);
+bool caseCompativel(string tipo_switch, string tipo_case);
 %}
 
 %token TK_NUM
@@ -79,6 +91,10 @@ bool exists_var_escopo_atual(string nome);
 %token TK_LL
 %token TK_RR
 %token TK_STRING
+%token TK_STRING_LIT
+%token TK_DEFAULT
+%token TK_CASE
+%token TK_SWITCH
 
 %start S
 
@@ -181,6 +197,10 @@ CMD			: E
 				$$.traducao = $1.traducao;
 			}
 			| COUT
+			{
+				$$.traducao = $1.traducao;
+			}
+			| SWITCH
 			{
 				$$.traducao = $1.traducao;
 			}
@@ -337,6 +357,134 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				$$.traducao = traducao;
 			}
 			;
+INICIO_SWITCH : TK_SWITCH '(' E ')' '{'
+			{
+
+				string fim_switch = get_label_temp("fim_switch");
+
+				abrir_escopo();
+
+				pilha_break.push_back(fim_switch);
+				pilha_switch_expr.push_back($3.label);
+				pilha_switch_tipo.push_back($3.tipo);
+
+				$$.label = fim_switch;
+				$$.tipo = $3.tipo;
+				$$.traducao = $3.traducao;
+			}
+			;
+
+SWITCH      : INICIO_SWITCH INICIO CASES INICIO '}'
+            {
+                string fim_switch = $1.label;
+
+                string destino_default;
+
+                if($3.tem_default) {
+                    destino_default = $3.default_label;
+                }
+                else {
+                    destino_default = fim_switch;
+                }
+
+                $$.traducao = $1.traducao;
+                $$.traducao += $3.teste;
+                $$.traducao += "\tgoto " + destino_default + ";\n";
+                $$.traducao += $3.corpo;
+                $$.traducao += fim_switch + ":\n";
+
+                pilha_break.pop_back();
+                pilha_switch_expr.pop_back();
+                pilha_switch_tipo.pop_back();
+
+                fechar_escopo();
+            }
+            ;
+CASES  		: CASE_ITEM
+			{
+				$$.teste = $1.teste;
+				$$.corpo = $1.corpo;
+				$$.tem_default = $1.tem_default;
+				$$.default_label = $1.default_label;
+			}
+			| CASES CASE_ITEM
+			{
+				if($1.tem_default && $2.tem_default) {
+					yyerror("switch nao pode ter mais de um default");
+					exit(1);
+				}
+
+				$$.teste = $1.teste + $2.teste;
+				$$.corpo = $1.corpo + $2.corpo;
+				$$.tem_default = $1.tem_default || $2.tem_default;
+
+				if($1.tem_default) {
+					$$.default_label = $1.default_label;
+				}
+				else {
+					$$.default_label = $2.default_label;
+				}
+			}
+			;
+
+CASE_ITEM   : TK_CASE VALOR ':' CORPO_CASE
+            {
+                string tipo_switch = pilha_switch_tipo.back();
+
+                if(!caseCompativel(tipo_switch, $2.tipo)) {
+                    yyerror("case do tipo " + $2.tipo + " incompativel com switch do tipo " + tipo_switch);
+                    exit(1);
+                }
+
+                string label_case = get_label_temp("case");
+
+                if(tipo_switch == "string") {
+                    string cmp = gentempcode();
+                    addVar(cmp, "int");
+
+                    $$.teste = "\t" + cmp + " = strcmp(" + pilha_switch_expr.back() + ", " + $2.label + ");\n";
+                    $$.teste += "\tif (" + cmp + " == 0) goto " + label_case + ";\n";
+                }
+                else {
+                    $$.teste = "\tif (" + pilha_switch_expr.back() + " == " + $2.label + ") goto " + label_case + ";\n";
+                }
+
+                $$.corpo = label_case + ":\n";
+                $$.corpo += $4.traducao;
+
+                $$.corpo += "\tgoto " + pilha_break.back() + ";\n";
+
+                $$.tem_default = false;
+                $$.default_label = "";
+            }
+            | TK_DEFAULT ':' CORPO_CASE
+            {
+                string label_default = get_label_temp("default_switch");
+
+                $$.teste = "";
+                $$.corpo = label_default + ":\n";
+                $$.corpo += $3.traducao;
+
+                $$.corpo += "\tgoto " + pilha_break.back() + ";\n";
+
+                $$.tem_default = true;
+                $$.default_label = label_default;
+            }
+            ;
+
+CORPO_CASE  : INICIO
+            {
+                $$.traducao = "";
+            }
+            | INICIO CMDS
+            {
+                $$.traducao = $2.traducao;
+            }
+            | INICIO CMDS FINAIS
+            {
+                $$.traducao = $2.traducao;
+            }
+            ;
 BREAK		: TK_BREAK 
 			{
 				if(pilha_break.empty()) {
@@ -373,6 +521,11 @@ TIPO		: TK_INT
 			{
 				$$.tipo = "char";
 			}
+			| TK_STRING
+			{
+				$$.tipo = "string";
+			}
+
 			;
 VALOR		: TK_TRUE
 			{
@@ -394,10 +547,14 @@ VALOR		: TK_TRUE
 			{
 				$$.tipo = "float";
 			}
+			| TK_STRING_LIT
+			{
+				$$.tipo = "string";
+			}
 			;
 CIN			: TK_CIN TK_RR TK_ID
 			{
-				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+				tuple<bool, bool, variavel*> exists = existsVar($3.label, "any");
 
 				if(!get<0>(exists)) {
 					yyerror("Variavel " + $3.label + " nao foi declarada anteriormente");
@@ -412,7 +569,7 @@ CIN			: TK_CIN TK_RR TK_ID
 			;
 COUT		: TK_COUT TK_LL TK_ID
 			{
-				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+				tuple<bool, bool, variavel*> exists = existsVar($3.label, "any");
 
 				if(!get<0>(exists)) {
 					yyerror("Variavel " + $3.label + " nao foi declarada anteriormente");
@@ -424,7 +581,7 @@ COUT		: TK_COUT TK_LL TK_ID
 				string traducao = "\tcout << " + var->nome_interno + ";\n";
 				$$.traducao = traducao;		
 			}
-			| TK_COUT TK_LL TK_STRING
+			| TK_COUT TK_LL TK_STRING_LIT
 			{
 				string traducao = "\tcout << " + $3.label + ";\n";
 				$$.traducao = traducao;	
@@ -433,7 +590,12 @@ COUT		: TK_COUT TK_LL TK_ID
 E 			: E '+' E
 			{
 				bool operacaoCompativel = atribuicaoCompativel($1.tipo, $3.tipo);
+				bool soma_compativel = somaCompativel($1.tipo, $3.tipo);
 				if(!operacaoCompativel) {
+					yyerror("Voce nao pode somar um " + $1.tipo + " com um " + $3.tipo);
+					exit(1);
+				}
+				if(!soma_compativel) {
 					yyerror("Voce nao pode somar um " + $1.tipo + " com um " + $3.tipo);
 					exit(1);
 				}
@@ -442,7 +604,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = "int";
+					tipo_resultado = $1.tipo;
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -468,13 +630,33 @@ E 			: E '+' E
 				addVar($$.label, tipo_resultado);
 				$$.tipo = tipo_resultado;
 
-				$$.traducao = traducao + "\t" + $$.label +	
-					" = " + op1 + " + " + op3 + ";\n";
+				if(tipo_resultado == "string") {
+					string soma_tam = gentempcode();
+					addVar(soma_tam, "int");
+
+					$$.tam = $$.label + "_tam";
+
+					$$.traducao = traducao;
+
+					$$.traducao += "\t" + soma_tam + " = " + $1.tam + " + " + $3.tam + ";\n";
+
+					$$.traducao += "\t" + $$.tam + " = " + soma_tam + " - 1;\n";
+
+					$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+
+					$$.traducao += "\tstrcpy(" + $$.label + ", " + op1 + ");\n";
+
+					$$.traducao += "\tstrcat(" + $$.label + ", " + op3 + ");\n";
+				}
+				else {
+					$$.traducao = traducao + "\t" + $$.label +
+						" = " + op1 + " + " + op3 + ";\n";
+    }
 			}
 			|
 			E '-' E
 			{
-				bool operacaoCompativel = atribuicaoCompativel($1.tipo, $3.tipo);
+				bool operacaoCompativel = operacao_compativel($1.tipo, $3.tipo);
 				if(!operacaoCompativel) {
 					yyerror("Voce nao pode subtrair um " + $3.tipo + " de um " + $1.tipo);
 					exit(1);
@@ -484,7 +666,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = "int";
+					tipo_resultado = $1.tipo;
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -515,7 +697,7 @@ E 			: E '+' E
 			|
    			 E '*' E
 			{
-				bool operacaoCompativel = atribuicaoCompativel($1.tipo, $3.tipo);
+				bool operacaoCompativel = operacao_compativel($1.tipo, $3.tipo);
 				if(!operacaoCompativel) {
 					yyerror("Voce nao pode multiplicar um " + $1.tipo + " por um " + $3.tipo);
 					exit(1);
@@ -525,7 +707,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = "int";
+					tipo_resultado = $1.tipo;
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -556,7 +738,7 @@ E 			: E '+' E
 			|
 			 E '/' E
 			{
-				bool operacaoCompativel = atribuicaoCompativel($1.tipo, $3.tipo);
+				bool operacaoCompativel = operacao_compativel($1.tipo, $3.tipo);
 				if(!operacaoCompativel) {
 					yyerror("Voce nao pode dividir um " + $1.tipo + " por um " + $3.tipo);
 					exit(1);
@@ -566,7 +748,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = "int";
+					tipo_resultado = $1.tipo;
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -654,7 +836,12 @@ E 			: E '+' E
 				$$.label = gentempcode();
 				addVar($$.label, "bool");
 				$$.tipo = "bool";
-				$$.traducao = traducao + "\t" + $$.label + " = " + op1 + " " + $2.label + " " + op3 + ";\n";
+				if($1.tipo == "string") {
+					$$.traducao = traducao + "\t" + $$.label + " = strcmp(" + $1.label + ", " + $3.label + ") " + $2.label + " 0;\n";
+				}
+				else {
+					$$.traducao = traducao + "\t" + $$.label + " = " + op1 + " " + $2.label + " " + op3 + ";\n";
+				 }
 			}
 			| E TK_OR E
 			{
@@ -707,16 +894,39 @@ E 			: E '+' E
 				variavel* var = get<2>(exists);
 				$$.label = var->nome_interno;
 				$$.tipo = var->tipo;
+				$$.tam = var->tam;
 				$$.traducao = "";
 			}
-			| VALOR
+			| VALOR 
 			{
 				$$.label = gentempcode();
 				addVar($$.label, $1.tipo);
 				$$.tipo = $1.tipo;
-				$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
-			}
+				$$.tam = "";
+				$$.traducao = "";
 
+				if($1.tipo == "string") {
+					string value = $1.label;
+
+					if(value.size() >= 2 && value[0] == '"' && value[value.size() - 1] == '"') {
+						value = value.substr(1, value.size() - 2);
+					}
+
+					$$.tam = $$.label + "_tam";
+
+					$$.traducao += "\t" + $$.tam + " = " + to_string(value.length() + 1) + ";\n";
+					$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+
+					for(int i = 0; i < value.length(); i++) {
+						$$.traducao += "\t" + $$.label + "[" + to_string(i) + "] = '" + value[i] + "';\n"; 
+					}
+
+					$$.traducao += "\t" + $$.label + "[" + to_string(value.length()) + "] = '\\0';\n"; 
+				}
+				else {
+					$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
+				}
+			}
 			;
 D			: TIPO TK_ID
 			{
@@ -746,6 +956,8 @@ D			: TIPO TK_ID
 				string var = gentempcode();
 				addVar($2.label, $1.tipo, false, var);
 
+				
+
 				string traducao = $4.traducao;
 				string origem = $4.label;
 
@@ -756,7 +968,14 @@ D			: TIPO TK_ID
 					origem = temp_cast;
 				}
 				$$.traducao = traducao;
-				$$.traducao += "\t" + var + " = " + origem + ";\n";
+				if($4.tipo == "string") {
+					$$.traducao += "\t" + var + " = (char*) malloc(" + $4.tam + ");\n";
+					$$.traducao += "\tstrcpy(" + var + ", " + $4.label + ");\n";
+					$$.traducao += "\t" + var + "_tam = " + $4.tam + ";\n";
+
+				}
+				else $$.traducao += "\t" + var + " = " + origem + ";\n";
+
 			}
 			;
 ATRIB		: TK_ID '=' E
@@ -786,10 +1005,24 @@ ATRIB		: TK_ID '=' E
 
 				var->valor = origem;
 				
-
 				$$.traducao = traducao;
-				$$.traducao += "\t" + var->nome_interno + " = " + origem + ";\n";
+
+				if(var->tipo == "string") {
+					if(var->valor.length() >= $3.label.length()) {
+						$$.traducao += "\tstrcpy(" + var->nome_interno + ", " + origem + ");\n";
+						$$.traducao += "\t" + var->nome_interno+ "_tam = " + $3.tam + ";\n";
+					}
+					else {
+						$$.traducao += var->nome_interno + " = (char*) malloc(" + $3.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + var->nome_interno + ", " + origem + ");\n";
+						$$.traducao += "\t" + var->nome_interno+ "_tam = " + $3.tam + ";\n";
+					}
+				}
+				else {
+					$$.traducao += "\t" + var->nome_interno + " = " + origem + ";\n";
+				}
 			}
+			;
 
 %%
 
@@ -805,9 +1038,6 @@ string cabecalho() {
 }
 
 void addVar(string nome, string tipo, bool interno, string nome_interno) {
-
-
-
 	if(!interno) {
 		bool exists = exists_var_escopo_atual(nome);
 		if(exists) {
@@ -823,6 +1053,14 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		// tabela[nome] = v;
 		if(tipo == "bool") {
 			variaveis += "\tint " + nome_interno + ";" + "\n";
+			return;
+		}
+		if(tipo == "string") {
+			v.tam = nome_interno + "_tam";
+			v.valor = "";
+			variaveis += "\tchar* " + nome_interno + ";" + "\n";
+			variaveis += "\tint " + nome_interno + "_tam;\n";
+			tabelas.back()[nome] = v;
 			return;
 		}
 		variaveis += "\t" + tipo + " " + nome_interno + ";" + "\n";
@@ -841,6 +1079,14 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		variaveis += "\tint " + nome + ";" + "\n";
 		return;
 	}
+	if(tipo == "string") {
+			var.tam = nome + "_tam";
+			var.valor = "";
+			variaveis += "\tchar* " + nome+ ";" + "\n";
+			variaveis += "\tint " + nome + "_tam;\n";
+			tabelas.back()[nome_temp] = var;
+			return;
+		}
 	variaveis += "\t" + tipo + " " + nome + ";" + "\n";
 }
 
@@ -873,6 +1119,22 @@ bool logicoCompativel(string t1, string t2) {
 bool atribuicaoCompativel(string t1, string t2) {
 	if(t1 == t2) return true;
 
+	if(isNumerico(t1) && isNumerico(t2)) return true;
+
+	return false;
+}
+
+bool somaCompativel(string t1, string t2) {
+	if(t1 == "bool" || t2 == "bool") return false;
+	if(t1 == t2) return true;
+
+	if(isNumerico(t1) && isNumerico(t2)) return true;
+
+	return false;
+}
+
+bool operacao_compativel(string t1, string t2) {
+	if(t1 == "bool" || t2 == "bool") return false;
 	if(isNumerico(t1) && isNumerico(t2)) return true;
 
 	return false;
@@ -931,6 +1193,11 @@ string get_label_temp(string label)
 {
 	label_qnt++;
 	return label + to_string(label_qnt);
+}
+
+
+bool caseCompativel(string tipo_switch, string tipo_case) {
+    return tipo_switch == tipo_case;
 }
 
 int main(int argc, char* argv[])
