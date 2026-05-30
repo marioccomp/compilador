@@ -804,7 +804,9 @@ E 			: E '+' E
 				addVar($$.label, $2.tipo);
 				$$.tipo = $2.tipo;
 
-				$$.traducao = $4.traducao + "\t" + $$.label + " = (" + $2.tipo + ") " + $4.label + ";\n";
+				string tipo = $2.tipo == "bool" ? "int" : $2.tipo;
+
+				$$.traducao = $4.traducao + "\t" + $$.label + " = (" + tipo + ") " + $4.label + ";\n";
 			}
 			| E TK_RELACIONAL E
 			{
