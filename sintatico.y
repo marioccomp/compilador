@@ -63,6 +63,7 @@ bool exists_var_escopo_atual(string nome);
 bool somaCompativel(string t1, string t2);
 bool operacao_compativel(string t1, string t2);
 bool caseCompativel(string tipo_switch, string tipo_case);
+string gerar_tamanho_string(string ponteiro, string tam);
 %}
 
 %token TK_NUM
@@ -563,8 +564,26 @@ CIN			: TK_CIN TK_RR TK_ID
 
 				variavel* var = get<2>(exists);
 
-				string traducao = "\tcin >> " + var->nome_interno + ";\n";
-				$$.traducao = traducao;		
+				string traducao = "";
+
+				if(var->tipo == "string") {
+					traducao += "\tfree(" + var->nome_interno + ");\n";
+					traducao += "\t" + var->nome_interno + " = read_string(&" + var->tam + ");\n";
+				}
+				else if(var->tipo == "int") {
+					traducao += "\t" + var->nome_interno + " = read_int();\n";
+				}
+				else if(var->tipo == "float") {
+					traducao += "\t" + var->nome_interno + " = read_float();\n";
+				}
+				else if(var->tipo == "char") {
+					traducao += "\t" + var->nome_interno + " = read_char();\n";
+				}
+				else if(var->tipo == "bool") {
+					traducao += "\t" + var->nome_interno + " = read_bool();\n";
+				}
+
+				$$.traducao = traducao;
 			}
 			;
 COUT		: TK_COUT TK_LL TK_ID
@@ -589,22 +608,23 @@ COUT		: TK_COUT TK_LL TK_ID
 			;
 E 			: E '+' E
 			{
-				bool operacaoCompativel = atribuicaoCompativel($1.tipo, $3.tipo);
 				bool soma_compativel = somaCompativel($1.tipo, $3.tipo);
-				if(!operacaoCompativel) {
-					yyerror("Voce nao pode somar um " + $1.tipo + " com um " + $3.tipo);
-					exit(1);
-				}
 				if(!soma_compativel) {
 					yyerror("Voce nao pode somar um " + $1.tipo + " com um " + $3.tipo);
 					exit(1);
 				}
 				string tipo_resultado;
-				if($1.tipo == "float" || $3.tipo == "float") {
+				if($1.tipo == "string" || $3.tipo == "string") {
+					tipo_resultado = "string";
+				}
+				else if($1.tipo == "char" && $3.tipo == "char") {
+					tipo_resultado = "string";
+				}
+				else if($1.tipo == "float" || $3.tipo == "float") {
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = $1.tipo;
+					tipo_resultado = "int";
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -624,34 +644,63 @@ E 			: E '+' E
 					traducao += "\t" + temp_cast + " = (float) " + $3.label + ";\n";
 					op3 = temp_cast;
 				}
+
 				$$.label = gentempcode();
-
-
 				addVar($$.label, tipo_resultado);
 				$$.tipo = tipo_resultado;
+				$$.tam = "";
 
 				if(tipo_resultado == "string") {
-					string soma_tam = gentempcode();
-					addVar(soma_tam, "int");
-
 					$$.tam = $$.label + "_tam";
-
 					$$.traducao = traducao;
 
-					$$.traducao += "\t" + soma_tam + " = " + $1.tam + " + " + $3.tam + ";\n";
+					if($1.tipo == "string" && $3.tipo == "string") {
+						string soma_tam = gentempcode();
+						addVar(soma_tam, "int");
 
-					$$.traducao += "\t" + $$.tam + " = " + soma_tam + " - 1;\n";
+						$$.traducao += "\t" + soma_tam + " = " + $1.tam + " + " + $3.tam + ";\n";
+						$$.traducao += "\t" + $$.tam + " = " + soma_tam + " - 1;\n";
+						$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + $$.label + ", " + op1 + ");\n";
+						$$.traducao += "\tstrcat(" + $$.label + ", " + op3 + ");\n";
+					}
+					else if($1.tipo == "char" && $3.tipo == "char") {
+						$$.traducao += "\t" + $$.tam + " = 3;\n";
+						$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+						$$.traducao += "\t" + $$.label + "[0] = " + op1 + ";\n";
+						$$.traducao += "\t" + $$.label + "[1] = " + op3 + ";\n";
+						$$.traducao += "\t" + $$.label + "[2] = '\\0';\n";
+					}
+					else if($1.tipo == "string" && $3.tipo == "char") {
+						string idx_char = gentempcode();
+						string idx_null = gentempcode();
 
-					$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+						addVar(idx_char, "int");
+						addVar(idx_null, "int");
 
-					$$.traducao += "\tstrcpy(" + $$.label + ", " + op1 + ");\n";
+						$$.traducao += "\t" + $$.tam + " = " + $1.tam + " + 1;\n";
+						$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + $$.label + ", " + op1 + ");\n";
 
-					$$.traducao += "\tstrcat(" + $$.label + ", " + op3 + ");\n";
+						$$.traducao += "\t" + idx_char + " = " + $1.tam + " - 1;\n";
+						$$.traducao += "\t" + $$.label + "[" + idx_char + "] = " + op3 + ";\n";
+
+						$$.traducao += "\t" + idx_null + " = " + $$.tam + " - 1;\n";
+						$$.traducao += "\t" + $$.label + "[" + idx_null + "] = '\\0';\n";
+					}
+					else if($1.tipo == "char" && $3.tipo == "string") {
+						$$.traducao += "\t" + $$.tam + " = " + $3.tam + " + 1;\n";
+						$$.traducao += "\t" + $$.label + " = (char*) malloc(" + $$.tam + ");\n";
+
+						$$.traducao += "\t" + $$.label + "[0] = " + op1 + ";\n";
+						$$.traducao += "\t" + $$.label + "[1] = '\\0';\n";
+						$$.traducao += "\tstrcat(" + $$.label + ", " + op3 + ");\n";
+					}
 				}
 				else {
 					$$.traducao = traducao + "\t" + $$.label +
 						" = " + op1 + " + " + op3 + ";\n";
-    }
+    			}
 			}
 			|
 			E '-' E
@@ -941,8 +990,16 @@ D			: TIPO TK_ID
 				addVar($2.label, $1.tipo, false, var);
 
 				$$.traducao = "";
+
+				if($1.tipo == "string") {
+					$$.traducao += "\t" + var + " = NULL;\n";
+					$$.traducao += "\t" + var + "_tam = 0;\n";
+				}
 			}
 			| ATRIB
+			{
+				$$.traducao = $1.traducao;
+			}
 			|
 			TIPO TK_ID '=' E
 			{
@@ -963,20 +1020,38 @@ D			: TIPO TK_ID
 				string traducao = $4.traducao;
 				string origem = $4.label;
 
-				if($1.tipo != $4.tipo) {
+				if(isNumerico($1.tipo) && isNumerico($4.tipo) && $1.tipo != $4.tipo) {
 					string temp_cast = gentempcode();
 					addVar(temp_cast, $1.tipo);
 					traducao += "\t" + temp_cast + " = (" + $1.tipo + ") " + $4.label + ";\n";
 					origem = temp_cast;
 				}
-				$$.traducao = traducao;
-				if($4.tipo == "string") {
-					$$.traducao += "\t" + var + " = (char*) malloc(" + $4.tam + ");\n";
-					$$.traducao += "\tstrcpy(" + var + ", " + $4.label + ");\n";
-					$$.traducao += "\t" + var + "_tam = " + $4.tam + ";\n";
 
+				$$.traducao = "";
+
+                if($1.tipo == "string") {
+                    $$.traducao += "\t" + var + " = NULL;\n";
+                    $$.traducao += "\t" + var + "_tam = 0;\n";
+                }
+
+                $$.traducao += traducao;
+
+                if($1.tipo == "string") {
+					if($4.tipo == "char") {
+						$$.traducao += "\t" + var + "_tam = 2;\n";
+						$$.traducao += "\t" + var + " = (char*) malloc(" + var + "_tam);\n";
+						$$.traducao += "\t" + var + "[0] = " + $4.label + ";\n";
+						$$.traducao += "\t" + var + "[1] = '\\0';\n";
+					}
+					else {
+						$$.traducao += "\t" + var + " = (char*) malloc(" + $4.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + var + ", " + $4.label + ");\n";
+						$$.traducao += "\t" + var + "_tam = " + $4.tam + ";\n";
+					}
 				}
-				else $$.traducao += "\t" + var + " = " + origem + ";\n";
+				else {
+					$$.traducao += "\t" + var + " = " + origem + ";\n";
+				}
 
 			}
 			;
@@ -998,7 +1073,7 @@ ATRIB		: TK_ID '=' E
 
 				string traducao = $3.traducao;
 				string origem = $3.label;
-				if(var->tipo != $3.tipo) {
+				if(isNumerico(var->tipo) && isNumerico($3.tipo) && var->tipo != $3.tipo) {
 					string temp_cast = gentempcode();
 					addVar(temp_cast, var->tipo);
 					traducao += "\t" + temp_cast + " = (" + var->tipo + ") " + $3.label + ";\n";
@@ -1010,14 +1085,18 @@ ATRIB		: TK_ID '=' E
 				$$.traducao = traducao;
 
 				if(var->tipo == "string") {
-					if(var->valor.length() >= $3.label.length()) {
-						$$.traducao += "\tstrcpy(" + var->nome_interno + ", " + origem + ");\n";
-						$$.traducao += "\t" + var->nome_interno+ "_tam = " + $3.tam + ";\n";
+					$$.traducao += "\tfree(" + var->nome_interno + ");\n";
+
+					if($3.tipo == "char") {
+						$$.traducao += "\t" + var->nome_interno + "_tam = 2;\n";
+						$$.traducao += "\t" + var->nome_interno + " = (char*) malloc(" + var->nome_interno + "_tam);\n";
+						$$.traducao += "\t" + var->nome_interno + "[0] = " + $3.label + ";\n";
+						$$.traducao += "\t" + var->nome_interno + "[1] = '\\0';\n";
 					}
 					else {
-						$$.traducao += var->nome_interno + " = (char*) malloc(" + $3.tam + ");\n";
+						$$.traducao += "\t" + var->nome_interno + " = (char*) malloc(" + $3.tam + ");\n";
 						$$.traducao += "\tstrcpy(" + var->nome_interno + ", " + origem + ");\n";
-						$$.traducao += "\t" + var->nome_interno+ "_tam = " + $3.tam + ";\n";
+						$$.traducao += "\t" + var->nome_interno + "_tam = " + $3.tam + ";\n";
 					}
 				}
 				else {
@@ -1035,6 +1114,102 @@ int yyparse();
 string cabecalho() {
 	string codigo = "/*Compilador FOCA*/\n"
 					"#include <stdio.h>\n"
+					"#include <stdlib.h>\n"
+					"#include <string.h>\n"
+					"#include <iostream>\n"
+					"using namespace std;\n\n"
+
+					"char* read_string(int* tam) {\n"
+					"\tint capacidade = 16;\n"
+					"\tint tamanho = 0;\n"
+					"\tint c;\n"
+					"\tchar* str = (char*) malloc(capacidade);\n\n"
+
+					"\tc = getchar();\n\n"
+
+					"\twhile(c == '\\n' || c == '\\r') {\n"
+					"\t\tc = getchar();\n"
+					"\t}\n\n"
+
+					"\twhile(c != EOF && c != '\\n' && c != '\\r') {\n"
+					"\t\tif(tamanho + 1 >= capacidade) {\n"
+					"\t\t\tcapacidade = capacidade * 2;\n"
+					"\t\t\tstr = (char*) realloc(str, capacidade);\n"
+					"\t\t}\n\n"
+
+					"\t\tstr[tamanho] = (char) c;\n"
+					"\t\ttamanho = tamanho + 1;\n"
+					"\t\tc = getchar();\n"
+					"\t}\n\n"
+
+					"\tstr[tamanho] = '\\0';\n"
+					"\t*tam = tamanho + 1;\n"
+					"\treturn str;\n"
+					"}\n\n"
+
+					"char* read_token(int* tam) {\n"
+					"\tint capacidade = 16;\n"
+					"\tint tamanho = 0;\n"
+					"\tint c;\n"
+					"\tchar* str = (char*) malloc(capacidade);\n\n"
+
+					"\tc = getchar();\n\n"
+
+					"\twhile(c == ' ' || c == '\\n' || c == '\\t' || c == '\\r') {\n"
+					"\t\tc = getchar();\n"
+					"\t}\n\n"
+
+					"\twhile(c != EOF && c != ' ' && c != '\\n' && c != '\\t' && c != '\\r') {\n"
+					"\t\tif(tamanho + 1 >= capacidade) {\n"
+					"\t\t\tcapacidade = capacidade * 2;\n"
+					"\t\t\tstr = (char*) realloc(str, capacidade);\n"
+					"\t\t}\n\n"
+
+					"\t\tstr[tamanho] = (char) c;\n"
+					"\t\ttamanho = tamanho + 1;\n"
+					"\t\tc = getchar();\n"
+					"\t}\n\n"
+
+					"\tstr[tamanho] = '\\0';\n"
+					"\t*tam = tamanho + 1;\n"
+					"\treturn str;\n"
+					"}\n\n"
+
+					"int read_int() {\n"
+					"\tint tam;\n"
+					"\tchar* str = read_token(&tam);\n"
+					"\tint valor = atoi(str);\n"
+					"\tfree(str);\n"
+					"\treturn valor;\n"
+					"}\n\n"
+
+					"float read_float() {\n"
+					"\tint tam;\n"
+					"\tchar* str = read_token(&tam);\n"
+					"\tfloat valor = atof(str);\n"
+					"\tfree(str);\n"
+					"\treturn valor;\n"
+					"}\n\n"
+
+					"char read_char() {\n"
+					"\tint tam;\n"
+					"\tchar* str = read_token(&tam);\n"
+					"\tchar valor = str[0];\n"
+					"\tfree(str);\n"
+					"\treturn valor;\n"
+					"}\n\n"
+
+					"int read_bool() {\n"
+					"\tint tam;\n"
+					"\tchar* str = read_token(&tam);\n"
+					"\tint valor = 0;\n"
+					"\tif(strcmp(str, \"true\") == 0 || strcmp(str, \"1\") == 0) {\n"
+					"\t\tvalor = 1;\n"
+					"\t}\n"
+					"\tfree(str);\n"
+					"\treturn valor;\n"
+					"}\n\n"
+
 					"int main(void) {\n";
 	return codigo;
 }
@@ -1123,12 +1298,19 @@ bool atribuicaoCompativel(string t1, string t2) {
 
 	if(isNumerico(t1) && isNumerico(t2)) return true;
 
+	if(t1 == "string" && t2 == "char") return true;
+
 	return false;
 }
 
 bool somaCompativel(string t1, string t2) {
 	if(t1 == "bool" || t2 == "bool") return false;
+
 	if(t1 == t2) return true;
+
+	if(t1 == "char" && t2 == "string") return true;
+
+	if(t1 == "string" && t2 == "char") return true;
 
 	if(isNumerico(t1) && isNumerico(t2)) return true;
 
@@ -1200,6 +1382,32 @@ string get_label_temp(string label)
 
 bool caseCompativel(string tipo_switch, string tipo_case) {
     return tipo_switch == tipo_case;
+}
+
+string gerar_tamanho_string(string ponteiro, string tam) {
+	string traducao = "";
+
+	string label = get_label_temp("tam_string");
+	string indice = gentempcode();
+	string caractere = gentempcode();
+	string eh_fim = gentempcode();
+	string continua = gentempcode();
+
+	addVar(indice, "int");
+	addVar(caractere, "char");
+	addVar(eh_fim, "bool");
+	addVar(continua, "bool");
+
+	traducao += "\t" + tam + " = 0;\n";
+	traducao += label + ":\n";
+	traducao += "\t" + tam + " = " + tam + " + 1;\n";
+	traducao += "\t" + indice + " = " + tam + " - 1;\n";
+	traducao += "\t" + caractere + " = " + ponteiro + "[" + indice + "];\n";
+	traducao += "\t" + eh_fim + " = " + caractere + " == '\\0';\n";
+	traducao += "\t" + continua + " = !" + eh_fim + ";\n";
+	traducao += "\tif (" + continua + ") goto " + label + ";\n";
+
+	return traducao;
 }
 
 int main(int argc, char* argv[])
