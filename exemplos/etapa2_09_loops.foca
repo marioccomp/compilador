@@ -1,0 +1,11 @@
+int i = 0;
+while (i < 5) {
+    i++;
+}
+do {
+    i--;
+} while (i > 0);
+
+for (int j = 0; j < 5; j++) {
+    cout << j;
+}

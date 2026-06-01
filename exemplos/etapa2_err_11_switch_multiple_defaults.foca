@@ -1,0 +1,7 @@
+int x = 1;
+switch (x) {
+    default:
+        int y = 2;
+    default:
+        int z = 3;
+}

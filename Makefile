@@ -42,6 +42,9 @@ test: glf
 	echo ""; \
 	echo "Resultado: $$pass passou, $$fail falhou"
 
+test2: glf
+	python3 testar_etapa2.py
+
 test-%: glf
 	@name=$(patsubst test-%,%,$@); \
 	foca=$$(ls exemplos/$${name}_*.foca 2>/dev/null | head -1); \

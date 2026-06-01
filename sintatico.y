@@ -5,6 +5,7 @@
 #include <utility>
 #include <tuple>
 #include <vector>
+#include <stdlib.h>
 
 #define YYSTYPE atributos
 
@@ -96,6 +97,8 @@ string gerar_tamanho_string(string ponteiro, string tam);
 %token TK_DEFAULT
 %token TK_CASE
 %token TK_SWITCH
+%token TK_PP
+%token TK_MM
 
 %start S
 
@@ -230,10 +233,10 @@ BLOCO		: ABRE_BLOCO INICIO FECHA_BLOCO
 				$$.traducao = $3.traducao;
 			}
 			;
-IF			: TK_IF '(' E ')' BLOCO  // aqui fiquei com algumas duvidas sobre oq aceitar dentro dos parenteses, aceitar so bool?
+IF			: TK_IF '(' E ')' QUEBRAS BLOCO  // aqui fiquei com algumas duvidas sobre oq aceitar dentro dos parenteses, aceitar so bool?
 			{
 				if($3.tipo != "bool") {
-					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
+					yyerror("A condição do 'if' deve ser do tipo bool");
 					exit(1);
 				}
 				string exp = $3.traducao;
@@ -242,10 +245,10 @@ IF			: TK_IF '(' E ')' BLOCO  // aqui fiquei com algumas duvidas sobre oq aceita
 				string temp = gentempcode();
 				addVar(temp, $3.tipo);
 				traducao += "\t" + temp + " = !" + $3.label + ";\n\tif " + "(" + temp + ") goto " + label + ";\n";
-				traducao += $5.traducao + label + ":\n";
+				traducao += $6.traducao + label + ":\n";
 				$$.traducao = traducao;
 			}
-			| TK_IF '(' E ')' BLOCO QUEBRAS TK_ELSE BLOCO
+			| TK_IF '(' E ')' QUEBRAS BLOCO TK_ELSE BLOCO
 			{
 				if($3.tipo != "bool") {
 					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
@@ -260,7 +263,7 @@ IF			: TK_IF '(' E ')' BLOCO  // aqui fiquei com algumas duvidas sobre oq aceita
 				string temp = gentempcode();
 				addVar(temp, $3.tipo);
 				traducao += "\t" + temp + " = !" + $3.label + ";\n\tif " + "(" + temp + ") goto " + inicio_else + ";\n";
-				traducao += $5.traducao + "\tgoto " + fim_if + ";\n" + inicio_else + ":\n";
+				traducao += $6.traducao + "\tgoto " + fim_if + ";\n" + inicio_else + ":\n";
 				traducao += $8.traducao + fim_if + ":\n";
 				$$.traducao = traducao;
 			}
@@ -279,19 +282,18 @@ INICIO_WHILE : TK_WHILE
 				
 			}
 			;
-WHILE		: INICIO_WHILE '(' E ')' BLOCO
+WHILE		: INICIO_WHILE '(' E ')' QUEBRAS BLOCO
 			{
 				if($3.tipo != "bool") {
-					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
+					yyerror("A condição do 'while' deve ser do tipo bool");
 					exit(1);
 				}
-
 				string inicio = $1.tipo;
 				string traducao = inicio + ":\n" + $3.traducao;
 				string temp = gentempcode();
 				addVar(temp, "bool");
 				traducao += "\t" + temp + " = !" + $3.label + ";\n\tif " + "(" + temp + ") goto " + $1.label + ";\n";
-				traducao += $5.traducao + "\tgoto " + inicio + ";\n" + $1.label + ":\n";
+				traducao += $6.traducao + "\tgoto " + inicio + ";\n" + $1.label + ":\n";
 				pilha_break.pop_back();
 				pilha_continue.pop_back();
 				$$.traducao = traducao;
@@ -300,25 +302,32 @@ WHILE		: INICIO_WHILE '(' E ')' BLOCO
 INICIO_DO	: TK_DO
 			{
 				string inicio = get_label_temp("inicio_do_while");
+				string teste = get_label_temp("teste_do_while");
 				string fim = get_label_temp("fim_do_while");
 				$$.label = fim;
 				$$.tipo = inicio;
+				$$.tam = teste;
+
 				pilha_break.push_back(fim);
-				pilha_continue.push_back(inicio);
+				pilha_continue.push_back(teste);
 			}
 			;
-DO_WHILE	: INICIO_DO BLOCO QUEBRAS TK_WHILE '(' E ')'
+DO_WHILE	: INICIO_DO QUEBRAS BLOCO QUEBRAS TK_WHILE '(' E ')'
 			{
-				if($6.tipo != "bool") {
-					yyerror("A condição do " + $1.label + " deve ser do tipo bool");
+				if($7.tipo != "bool") {
+					yyerror("A condição do 'do while' deve ser do tipo bool");
 					exit(1);
 				}
-				string exp = $6.traducao;
+				string exp = $7.traducao;
 				string inicio = $1.tipo;
 				string fim = $1.label;
-				string traducao = inicio + ":\n";
+				string teste = $1.tam;
 
-				traducao += $2.traducao + exp + "\tif (" + $6.label + ") goto " + inicio + ";\n";
+				string traducao = inicio + ":\n";
+				traducao += $3.traducao;
+				traducao += teste + ":\n";
+				traducao += $7.traducao;
+				traducao += "\tif (" + $7.label + ") goto " + inicio + ";\n";
 				traducao += fim + ":\n";
 				pilha_break.pop_back();
 				pilha_continue.pop_back();
@@ -330,13 +339,44 @@ ABRE_FOR	: TK_FOR '('
 				abrir_escopo();
 				string fim_for = get_label_temp("fim_for");
 				string inicio_for = get_label_temp("inicio_for");
+				string atualiza_for = get_label_temp("atualiza_for");
 				$$.label = fim_for;
 				$$.tipo = inicio_for;
+				$$.tam = atualiza_for;
 				pilha_break.push_back(fim_for);
-				pilha_continue.push_back(inicio_for);
+				pilha_continue.push_back(atualiza_for);
 			}
 			;
-FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
+FOR_INI     :
+            {
+                $$.traducao = "";
+            }
+            | D
+            {
+                $$.traducao = $1.traducao;
+            }
+            ;
+FOR_COND    :
+            {
+                $$.traducao = "";
+                $$.label = "1";
+                $$.tipo = "bool";
+            }
+            | E
+            {
+                $$ = $1;
+            }
+            ;
+FOR_ATUAL   :
+            {
+                $$.traducao = "";
+            }
+            | ATRIB
+            {
+                $$.traducao = $1.traducao;
+            }
+            ;
+FOR			: ABRE_FOR FOR_INI ';' FOR_COND ';' FOR_ATUAL ')' QUEBRAS BLOCO
 			{
 				if($4.tipo != "bool") {
 					yyerror("A expressão do 'for' deve ser do tipo bool");
@@ -345,11 +385,13 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				string traducao = $2.traducao;
 				string inicio_for = $1.tipo;
 				string fim_for = $1.label;
+				string atualiza_for = $1.tam;
 				traducao += inicio_for + ":\n" + $4.traducao;
 				string temp = gentempcode();
 				addVar(temp, "bool");
 				traducao += "\t" + temp + " = !" + $4.label + ";\n";
 				traducao += "\tif (" + temp + ") goto " + fim_for + ";\n" + $9.traducao;
+				traducao += atualiza_for + ":\n";
 				traducao += $6.traducao + "\tgoto " + inicio_for + ";\n";
 				traducao += fim_for + ":\n";
 				fechar_escopo();
@@ -358,7 +400,7 @@ FOR			: ABRE_FOR D ';' E ';' ATRIB ')' QUEBRAS BLOCO
 				$$.traducao = traducao;
 			}
 			;
-INICIO_SWITCH : TK_SWITCH '(' E ')' '{'
+INICIO_SWITCH : TK_SWITCH '(' E ')' QUEBRAS '{'
 			{
 
 				string fim_switch = get_label_temp("fim_switch");
@@ -1000,8 +1042,7 @@ D			: TIPO TK_ID
 			{
 				$$.traducao = $1.traducao;
 			}
-			|
-			TIPO TK_ID '=' E
+			| TIPO TK_ID '=' E
 			{
 				bool exists = exists_var_escopo_atual($2.label);
 				if(exists) {
@@ -1084,7 +1125,9 @@ ATRIB		: TK_ID '=' E
 				
 				$$.traducao = traducao;
 
-				if(var->tipo == "string") {
+				if(var->tipo == "string" && origem == var->nome_interno) {
+				}
+				else if(var->tipo == "string") {
 					$$.traducao += "\tfree(" + var->nome_interno + ");\n";
 
 					if($3.tipo == "char") {
@@ -1103,8 +1146,53 @@ ATRIB		: TK_ID '=' E
 					$$.traducao += "\t" + var->nome_interno + " = " + origem + ";\n";
 				}
 			}
-			;
+			| TK_ID TK_PP
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, $1.tipo);
 
+				variavel* var = get<2>(exists);
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel '" + $1.label + "' nao foi declarada");
+					exit(1);
+				}
+
+				else if(!isNumerico(var->tipo)) {
+					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador ++");
+					exit(1);
+				}
+
+				if(var->tipo == "float") {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
+				}
+				else {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
+				}
+			}
+			| TK_ID TK_MM
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel '" + $1.label + "' nao foi declarada");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+
+				if(!isNumerico(var->tipo)) {
+					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador --");
+					exit(1);
+				}
+
+				if(var->tipo == "float") {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1.0;\n";
+				}
+				else {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
+				}
+			}
+			;
 %%
 
 #include "lex.yy.c"

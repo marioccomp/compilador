@@ -1,0 +1,15 @@
+int i;
+float f;
+char c;
+string s;
+bool b;
+cin >> i;
+cin >> f;
+cin >> c;
+cin >> s;
+cin >> b;
+cout << i;
+cout << f;
+cout << c;
+cout << s;
+cout << b;

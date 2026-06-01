@@ -5,6 +5,7 @@
 %option noyywrap
 
 ESPACO [ \t]
+QUEBRA (\r\n|\n|\r)
 DIGITO [0-9]
 MIN[a-z]
 MAIU[A-Z]
@@ -17,6 +18,23 @@ NUM {DIGITO}+
 
 %%
 
+({QUEBRA}{ESPACO}*)+(?i:else) {
+    for(int i = 0; yytext[i] != '\0'; i++) {
+        if(yytext[i] == '\n') {
+            linha++;
+        }
+        else if(yytext[i] == '\r') {
+            linha++;
+
+            if(yytext[i + 1] == '\n') {
+                i++;
+            }
+        }
+    }
+
+    yylval.label = "else";
+    return TK_ELSE;
+}
 "\r\n"      { linha++; return '\n'; }
 "\n"        { linha++; return '\n'; }
 "\r"        { linha++; return '\n'; }
@@ -67,6 +85,8 @@ NUM {DIGITO}+
 "switch"   { return TK_SWITCH; }
 "case"     { return TK_CASE; }
 "default"  { return TK_DEFAULT; }
+"++"        {return TK_PP;}
+"--"        {return TK_MM;}
 
 
 {VAR}       { yylval.label = yytext; return TK_ID; }

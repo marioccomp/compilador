@@ -1,0 +1,5 @@
+int x = 1;
+switch (x) {
+    case 'a':
+        int y = 2;
+}

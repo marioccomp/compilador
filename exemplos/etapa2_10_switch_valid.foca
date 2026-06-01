@@ -1,0 +1,21 @@
+int x = 1;
+switch (x) {
+    case 1:
+        int a = 10;
+    case 2:
+        int b = 20;
+    default:
+        int c = 30;
+}
+char c = 'a';
+switch (c) {
+    case 'a':
+        int a = 10;
+    default:
+        int b = 20;
+}
+string s = "opt";
+switch (s) {
+    case "opt":
+        int a = 10;
+}

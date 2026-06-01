@@ -1,0 +1,138 @@
+/*Compilador FOCA*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <iostream>
+using namespace std;
+
+char* read_string(int* tam) {
+	int capacidade = 16;
+	int tamanho = 0;
+	int c;
+	char* str = (char*) malloc(capacidade);
+
+	c = getchar();
+
+	while(c == '\n' || c == '\r') {
+		c = getchar();
+	}
+
+	while(c != EOF && c != '\n' && c != '\r') {
+		if(tamanho + 1 >= capacidade) {
+			capacidade = capacidade * 2;
+			str = (char*) realloc(str, capacidade);
+		}
+
+		str[tamanho] = (char) c;
+		tamanho = tamanho + 1;
+		c = getchar();
+	}
+
+	str[tamanho] = '\0';
+	*tam = tamanho + 1;
+	return str;
+}
+
+char* read_token(int* tam) {
+	int capacidade = 16;
+	int tamanho = 0;
+	int c;
+	char* str = (char*) malloc(capacidade);
+
+	c = getchar();
+
+	while(c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+		c = getchar();
+	}
+
+	while(c != EOF && c != ' ' && c != '\n' && c != '\t' && c != '\r') {
+		if(tamanho + 1 >= capacidade) {
+			capacidade = capacidade * 2;
+			str = (char*) realloc(str, capacidade);
+		}
+
+		str[tamanho] = (char) c;
+		tamanho = tamanho + 1;
+		c = getchar();
+	}
+
+	str[tamanho] = '\0';
+	*tam = tamanho + 1;
+	return str;
+}
+
+int read_int() {
+	int tam;
+	char* str = read_token(&tam);
+	int valor = atoi(str);
+	free(str);
+	return valor;
+}
+
+float read_float() {
+	int tam;
+	char* str = read_token(&tam);
+	float valor = atof(str);
+	free(str);
+	return valor;
+}
+
+char read_char() {
+	int tam;
+	char* str = read_token(&tam);
+	char valor = str[0];
+	free(str);
+	return valor;
+}
+
+int read_bool() {
+	int tam;
+	char* str = read_token(&tam);
+	int valor = 0;
+	if(strcmp(str, "true") == 0 || strcmp(str, "1") == 0) {
+		valor = 1;
+	}
+	free(str);
+	return valor;
+}
+
+int main(void) {
+	int t1;
+	int t2;
+	float t3;
+	float t4;
+	int t5;
+	float t6;
+	char* t7;
+	int t7_tam;
+	char* t8;
+	int t8_tam;
+	char t9;
+
+	t1 = 10;
+	t2 = t1;
+	t3 = 5.5;
+	t4 = t3;
+	t5 = (int) t4;
+	t2 = t5;
+	t6 = (float) t2;
+	t4 = t6;
+	t8 = NULL;
+	t8_tam = 0;
+	t7_tam = 4;
+	t7 = (char*) malloc(t7_tam);
+	t7[0] = 'a';
+	t7[1] = 'b';
+	t7[2] = 'c';
+	t7[3] = '\0';
+	t8 = (char*) malloc(t7_tam);
+	strcpy(t8, t7);
+	t8_tam = t7_tam;
+	t9 = 'x';
+	free(t8);
+	t8_tam = 2;
+	t8 = (char*) malloc(t8_tam);
+	t8[0] = t9;
+	t8[1] = '\0';
+	return 0;
+}

@@ -1,0 +1,9 @@
+bool b = true;
+if (b) {
+    int x = 1;
+}
+if (!b) {
+    int y = 2;
+} else {
+    int y = 3;
+}

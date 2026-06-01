@@ -1,0 +1,6 @@
+int x = 100;
+{
+    int x = 200;
+    cout << x;
+}
+cout << x;

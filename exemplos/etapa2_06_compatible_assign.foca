@@ -1,0 +1,6 @@
+int i = 10;
+float f = 5.5;
+i = f;
+f = i;
+string s = "abc";
+s = 'x';

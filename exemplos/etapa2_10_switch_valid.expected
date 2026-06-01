@@ -1,0 +1,173 @@
+/*Compilador FOCA*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <iostream>
+using namespace std;
+
+char* read_string(int* tam) {
+	int capacidade = 16;
+	int tamanho = 0;
+	int c;
+	char* str = (char*) malloc(capacidade);
+
+	c = getchar();
+
+	while(c == '\n' || c == '\r') {
+		c = getchar();
+	}
+
+	while(c != EOF && c != '\n' && c != '\r') {
+		if(tamanho + 1 >= capacidade) {
+			capacidade = capacidade * 2;
+			str = (char*) realloc(str, capacidade);
+		}
+
+		str[tamanho] = (char) c;
+		tamanho = tamanho + 1;
+		c = getchar();
+	}
+
+	str[tamanho] = '\0';
+	*tam = tamanho + 1;
+	return str;
+}
+
+char* read_token(int* tam) {
+	int capacidade = 16;
+	int tamanho = 0;
+	int c;
+	char* str = (char*) malloc(capacidade);
+
+	c = getchar();
+
+	while(c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+		c = getchar();
+	}
+
+	while(c != EOF && c != ' ' && c != '\n' && c != '\t' && c != '\r') {
+		if(tamanho + 1 >= capacidade) {
+			capacidade = capacidade * 2;
+			str = (char*) realloc(str, capacidade);
+		}
+
+		str[tamanho] = (char) c;
+		tamanho = tamanho + 1;
+		c = getchar();
+	}
+
+	str[tamanho] = '\0';
+	*tam = tamanho + 1;
+	return str;
+}
+
+int read_int() {
+	int tam;
+	char* str = read_token(&tam);
+	int valor = atoi(str);
+	free(str);
+	return valor;
+}
+
+float read_float() {
+	int tam;
+	char* str = read_token(&tam);
+	float valor = atof(str);
+	free(str);
+	return valor;
+}
+
+char read_char() {
+	int tam;
+	char* str = read_token(&tam);
+	char valor = str[0];
+	free(str);
+	return valor;
+}
+
+int read_bool() {
+	int tam;
+	char* str = read_token(&tam);
+	int valor = 0;
+	if(strcmp(str, "true") == 0 || strcmp(str, "1") == 0) {
+		valor = 1;
+	}
+	free(str);
+	return valor;
+}
+
+int main(void) {
+	int t1;
+	int t2;
+	int t3;
+	int t4;
+	int t5;
+	int t6;
+	int t7;
+	int t8;
+	char t9;
+	char t10;
+	int t11;
+	int t12;
+	int t13;
+	int t14;
+	char* t15;
+	int t15_tam;
+	char* t16;
+	int t16_tam;
+	int t17;
+	int t18;
+	int t19;
+
+	t1 = 1;
+	t2 = t1;
+	if (t2 == 1) goto case2;
+	if (t2 == 2) goto case3;
+	goto default_switch4;
+case2:
+	t3 = 10;
+	t4 = t3;
+	goto fim_switch1;
+case3:
+	t5 = 20;
+	t6 = t5;
+	goto fim_switch1;
+default_switch4:
+	t7 = 30;
+	t8 = t7;
+	goto fim_switch1;
+fim_switch1:
+	t9 = 'a';
+	t10 = t9;
+	if (t10 == 'a') goto case6;
+	goto default_switch7;
+case6:
+	t11 = 10;
+	t12 = t11;
+	goto fim_switch5;
+default_switch7:
+	t13 = 20;
+	t14 = t13;
+	goto fim_switch5;
+fim_switch5:
+	t16 = NULL;
+	t16_tam = 0;
+	t15_tam = 4;
+	t15 = (char*) malloc(t15_tam);
+	t15[0] = 'o';
+	t15[1] = 'p';
+	t15[2] = 't';
+	t15[3] = '\0';
+	t16 = (char*) malloc(t15_tam);
+	strcpy(t16, t15);
+	t16_tam = t15_tam;
+	t19 = strcmp(t16, "opt");
+	if (t19 == 0) goto case9;
+	goto fim_switch8;
+case9:
+	t17 = 10;
+	t18 = t17;
+	goto fim_switch8;
+fim_switch8:
+	return 0;
+}
