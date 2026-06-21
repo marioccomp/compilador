@@ -10,7 +10,6 @@ DIGITO [0-9]
 MIN[a-z]
 MAIU[A-Z]
 VAR [_a-zA-Z][_a-zA-Z0-9]*
-
 DELIM {ESPACO}+
 FLOAT ({DIGITO}+"."{DIGITO}*)|({DIGITO}*"."{DIGITO}+)
 NUM {DIGITO}+
@@ -41,6 +40,10 @@ NUM {DIGITO}+
 
 {DELIM} 	{}
 
+"+="        { yylval.label = "+"; return TK_ATRIB_COMP; }
+"-="        { yylval.label = "-"; return TK_ATRIB_COMP; }
+"*="        { yylval.label = "*"; return TK_ATRIB_COMP; }
+"/="        { yylval.label = "/"; return TK_ATRIB_COMP; }
 [+-]			{ return *yytext; }
 [*/]             { return *yytext; }
 
@@ -56,6 +59,7 @@ NUM {DIGITO}+
 ")"        { return ')'; }
 "{"         {return '{';}
 "}"         {return '}';}
+","         {return ',';}
 \'[a-zA-Z]\' { yylval.label = yytext; return TK_LETTER; }
 "="          {return '=';}
 "=="         {yylval.label = yytext; return TK_RELACIONAL;}
@@ -75,9 +79,12 @@ NUM {DIGITO}+
 (?i:else)   {yylval.label = yytext; return TK_ELSE;}
 (?i:for)    {yylval.label = yytext; return TK_FOR;}
 (?i:break)  {return TK_BREAK;}
+(?i:all)    {yylval.label = "all"; return TK_ALL;}
 (?i:continue)  {return TK_CONTINUE;}
 (?i:cin)    {return TK_CIN;}
 (?i:cout)    {return TK_COUT;}
+(?i:func)   {return TK_FUNC;}
+(?i:return) {return TK_RETURN;}
 ">>"        {return TK_RR;}
 "<<"        {return TK_LL;}
 \"[^\"]*\" { yylval.label = yytext; return TK_STRING_LIT;}
@@ -87,6 +94,8 @@ NUM {DIGITO}+
 "default"  { return TK_DEFAULT; }
 "++"        {return TK_PP;}
 "--"        {return TK_MM;}
+
+
 
 
 {VAR}       { yylval.label = yytext; return TK_ID; }

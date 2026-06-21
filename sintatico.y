@@ -17,6 +17,7 @@ int label_qnt;
 int linha = 1;
 string codigo_gerado;
 string variaveis;
+int chamada_funcao_qnt;
 
 struct variavel
 {
@@ -26,11 +27,37 @@ struct variavel
 	string tam;
 };
 
+struct argumento
+{
+	string label;
+	string traducao;
+	string tipo;
+	string tam;
+};
+
+struct funcao
+{
+	string nome;
+	string label;
+	string tipo_retorno;
+	string var_retorno;
+	string var_chamada;
+	string fim_label;
+	string corpo;
+	vector<argumento> parametros;
+	vector<pair<int, string>> retornos;
+	bool definida;
+	bool tem_return;
+	bool retorno_tipado;
+};
+
 vector<map<string, variavel>> tabelas;
 vector<string> pilha_break;
 vector<string> pilha_continue;
 vector<string> pilha_switch_expr;
 vector<string> pilha_switch_tipo;
+vector<string> pilha_funcao;
+map<string, funcao> funcoes;
 
 
 struct atributos
@@ -44,6 +71,8 @@ struct atributos
     string corpo;
     string default_label;
     bool tem_default;
+
+	vector<argumento> args;
 };
 
 int yylex(void);
@@ -65,6 +94,10 @@ bool somaCompativel(string t1, string t2);
 bool operacao_compativel(string t1, string t2);
 bool caseCompativel(string tipo_switch, string tipo_case);
 string gerar_tamanho_string(string ponteiro, string tam);
+void addParametroFuncao(string nome, string tipo);
+string gerar_atribuicao_valor(string destino, string destino_tam, string destino_tipo, atributos origem_attr);
+string gerar_chamada_funcao(string nome, vector<argumento> args, string &tipo, string &label, string &tam);
+string montar_codigo_funcoes();
 %}
 
 %token TK_NUM
@@ -99,6 +132,10 @@ string gerar_tamanho_string(string ponteiro, string tam);
 %token TK_SWITCH
 %token TK_PP
 %token TK_MM
+%token TK_ATRIB_COMP
+%token TK_FUNC
+%token TK_RETURN
+%token TK_ALL
 
 %start S
 
@@ -207,6 +244,14 @@ CMD			: E
 			| SWITCH
 			{
 				$$.traducao = $1.traducao;
+			}
+			| RETURN
+			{
+				$$.traducao = $1.traducao;
+			}
+			| FUNCAO
+			{
+				$$.traducao = "";
 			}
 			;
 
@@ -528,24 +573,202 @@ CORPO_CASE  : INICIO
                 $$.traducao = $2.traducao;
             }
             ;
-BREAK		: TK_BREAK 
+BREAK		: TK_BREAK TK_ALL
 			{
 				if(pilha_break.empty()) {
 					yyerror("Nao existe loop para dar break");
 					exit(1);
 				}
-				string traducao = "\tgoto " + pilha_break.back() + ";\n";
+
+				string back = pilha_break.back();
+				if($2.label == "all") {
+					back = pilha_break[0];
+				}
+
+				string traducao = "\tgoto " + back + ";\n";
 				$$.traducao = traducao;
 			}
 			;
-CONTINUE		: TK_CONTINUE
+CONTINUE	: TK_CONTINUE ALL
 			{
 				if(pilha_continue.empty()) {
 					yyerror("Nao existe loop para dar continue");
 					exit(1);
 				}
-				string traducao = "\tgoto " + pilha_continue.back() + ";\n";
+
+				string back = pilha_continue.back();
+				if($2.label == "all") {
+					back = pilha_continue[0];
+				}
+				string traducao = "\tgoto " + back + ";\n";
 				$$.traducao = traducao;
+			}
+			;
+ALL			: TK_ALL
+			|
+			;
+INICIO_FUNCAO : TK_FUNC TK_ID '('
+			{
+				if(!pilha_funcao.empty()) {
+					yyerror("Nao pode declarar funcao dentro de outra funcao");
+					exit(1);
+				}
+
+				if(funcoes.find($2.label) != funcoes.end()) {
+					yyerror("Funcao " + $2.label + " ja foi declarada");
+					exit(1);
+				}
+
+				funcao f;
+				f.nome = $2.label;
+				f.label = "func_" + $2.label;
+				f.tipo_retorno = "";
+				f.var_retorno = gentempcode();
+				f.var_chamada = gentempcode();
+				f.fim_label = get_label_temp("fim_func_" + $2.label);
+				f.corpo = "";
+				f.definida = false;
+				f.tem_return = false;
+				f.retorno_tipado = false;
+
+				funcoes[$2.label] = f;
+
+				addVar(f.var_chamada, "int");
+
+				abrir_escopo();
+				pilha_funcao.push_back($2.label);
+			}
+			;
+
+PARAMS_FUNC :
+			{
+				$$.traducao = "";
+			}
+			| LISTA_PARAMS_FUNC
+			{
+				$$.traducao = "";
+			}
+			;
+RETORNO_FUNC :
+			{
+				$$.tipo = "";
+			}
+			| ':' TIPO
+			{
+				if(pilha_funcao.empty()) {
+					yyerror("Tipo de retorno declarado fora de funcao");
+					exit(1);
+				}
+
+				string nome_funcao = pilha_funcao.back();
+				funcao &f = funcoes[nome_funcao];
+
+				f.tipo_retorno = $2.tipo;
+				f.retorno_tipado = true;
+
+				addVar(f.var_retorno, f.tipo_retorno);
+
+				$$.tipo = $2.tipo;
+			}
+			;
+
+LISTA_PARAMS_FUNC : PARAM_FUNC
+			| LISTA_PARAMS_FUNC ',' PARAM_FUNC
+			;
+
+PARAM_FUNC : TIPO TK_ID
+			{
+				addParametroFuncao($2.label, $1.tipo);
+			}
+			;
+
+FUNCAO     : INICIO_FUNCAO PARAMS_FUNC ')' RETORNO_FUNC QUEBRAS BLOCO
+			{
+				string nome_funcao = pilha_funcao.back();
+				funcao &f = funcoes[nome_funcao];
+
+				if(f.retorno_tipado && !f.tem_return) {
+					yyerror("Funcao " + nome_funcao + " foi declarada com retorno " + f.tipo_retorno + ", mas nao possui return");
+					exit(1);
+				}
+
+				if(!f.tem_return && !f.retorno_tipado) {
+					f.tipo_retorno = "void";
+				}
+
+				f.corpo = $6.traducao;
+				f.definida = true;
+
+				fechar_escopo();
+				pilha_funcao.pop_back();
+
+				$$.traducao = "";
+			}
+			;
+
+RETURN     : TK_RETURN E
+			{
+				if(pilha_funcao.empty()) {
+					yyerror("return so pode ser usado dentro de funcao");
+					exit(1);
+				}
+
+				string nome_funcao = pilha_funcao.back();
+				funcao &f = funcoes[nome_funcao];
+
+				if(f.tipo_retorno == "") {
+					f.tipo_retorno = $2.tipo;
+					addVar(f.var_retorno, f.tipo_retorno);
+				}
+				else if(!atribuicaoCompativel(f.tipo_retorno, $2.tipo)) {
+					yyerror("Retorno da funcao " + nome_funcao + " deveria ser " + f.tipo_retorno + ", mas recebeu " + $2.tipo);
+					exit(1);
+				}
+
+				f.tem_return = true;
+
+				$$.traducao = gerar_atribuicao_valor(f.var_retorno, f.var_retorno + "_tam", f.tipo_retorno, $2);
+				$$.traducao += "\tgoto " + f.fim_label + ";\n";
+			}
+			;
+
+ARGS       :
+			{
+				$$.args.clear();
+			}
+			| LISTA_ARGS
+			{
+				$$.args = $1.args;
+			}
+			;
+
+LISTA_ARGS : E
+			{
+				argumento a;
+				a.label = $1.label;
+				a.traducao = $1.traducao;
+				a.tipo = $1.tipo;
+				a.tam = $1.tam;
+
+				$$.args.clear();
+				$$.args.push_back(a);
+			}
+			| LISTA_ARGS ',' E
+			{
+				argumento a;
+				a.label = $3.label;
+				a.traducao = $3.traducao;
+				a.tipo = $3.tipo;
+				a.tam = $3.tam;
+
+				$$.args = $1.args;
+				$$.args.push_back(a);
+			}
+			;
+
+CHAMADA    : TK_ID '(' ARGS ')'
+			{
+				$$.traducao = gerar_chamada_funcao($1.label, $3.args, $$.tipo, $$.label, $$.tam);
 			}
 			;
 TIPO		: TK_INT
@@ -572,26 +795,32 @@ TIPO		: TK_INT
 			;
 VALOR		: TK_TRUE
 			{
+				$$.label = $1.label;
 				$$.tipo = "bool";
 			}
 			| TK_FALSE
 			{
+				$$.label = $1.label;
 				$$.tipo = "bool";
 			}
 			| TK_LETTER
 			{
+				$$.label = $1.label;
 				$$.tipo = "char";	
 			} 
 			| TK_NUM
 			{
+				$$.label = $1.label;
 				$$.tipo = "int";
 			}
 			| TK_FLOAT_LIT
 			{
+				$$.label = $1.label;
 				$$.tipo = "float";
 			}
 			| TK_STRING_LIT
 			{
+				$$.label = $1.label;
 				$$.tipo = "string";
 			}
 			;
@@ -1020,6 +1249,10 @@ E 			: E '+' E
 					$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
 				}
 			}
+			| CHAMADA
+			{
+				$$ = $1;
+			}
 			;
 D			: TIPO TK_ID
 			{
@@ -1146,6 +1379,130 @@ ATRIB		: TK_ID '=' E
 					$$.traducao += "\t" + var->nome_interno + " = " + origem + ";\n";
 				}
 			}
+			| TK_ID TK_ATRIB_COMP E
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel '" + $1.label + "' nao foi declarada");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+				string op = $2.label;
+
+				if(op == "+" && var->tipo == "string") {
+					if($3.tipo != "string" && $3.tipo != "char") {
+						yyerror("Operador += em string so aceita string ou char");
+						exit(1);
+					}
+
+					$$.traducao = $3.traducao;
+
+					string novo_tam = gentempcode();
+					string novo_ptr = gentempcode();
+
+					addVar(novo_tam, "int");
+					addVar(novo_ptr, "string");
+
+					if($3.tipo == "string") {
+						string soma_tam = gentempcode();
+						addVar(soma_tam, "int");
+
+						$$.traducao += "\t" + soma_tam + " = " + var->tam + " + " + $3.tam + ";\n";
+						$$.traducao += "\t" + novo_tam + " = " + soma_tam + " - 1;\n";
+						$$.traducao += "\t" + novo_ptr + " = (char*) malloc(" + novo_tam + ");\n";
+						$$.traducao += "\tstrcpy(" + novo_ptr + ", " + var->nome_interno + ");\n";
+						$$.traducao += "\tstrcat(" + novo_ptr + ", " + $3.label + ");\n";
+					}
+					else {
+						string idx_char = gentempcode();
+						string idx_null = gentempcode();
+
+						addVar(idx_char, "int");
+						addVar(idx_null, "int");
+
+						$$.traducao += "\t" + novo_tam + " = " + var->tam + " + 1;\n";
+						$$.traducao += "\t" + novo_ptr + " = (char*) malloc(" + novo_tam + ");\n";
+						$$.traducao += "\tstrcpy(" + novo_ptr + ", " + var->nome_interno + ");\n";
+						$$.traducao += "\t" + idx_char + " = " + var->tam + " - 1;\n";
+						$$.traducao += "\t" + novo_ptr + "[" + idx_char + "] = " + $3.label + ";\n";
+						$$.traducao += "\t" + idx_null + " = " + novo_tam + " - 1;\n";
+						$$.traducao += "\t" + novo_ptr + "[" + idx_null + "] = '\\0';\n";
+					}
+
+					$$.traducao += "\tfree(" + var->nome_interno + ");\n";
+					$$.traducao += "\t" + var->nome_interno + " = " + novo_ptr + ";\n";
+					$$.traducao += "\t" + var->tam + " = " + novo_tam + ";\n";
+				}
+				else {
+					if(op == "+") {
+						if(!somaCompativel(var->tipo, $3.tipo)) {
+							yyerror("Voce nao pode usar += entre " + var->tipo + " e " + $3.tipo);
+							exit(1);
+						}
+					}
+					else {
+						if(!operacao_compativel(var->tipo, $3.tipo)) {
+							yyerror("Voce nao pode usar " + op + "= entre " + var->tipo + " e " + $3.tipo);
+							exit(1);
+						}
+					}
+
+					if(!isNumerico(var->tipo) || !isNumerico($3.tipo)) {
+						yyerror("Operador " + op + "= invalido para os tipos " + var->tipo + " e " + $3.tipo);
+						exit(1);
+					}
+
+					string tipo_resultado;
+
+					if(var->tipo == "float" || $3.tipo == "float") {
+						tipo_resultado = "float";
+					}
+					else {
+						tipo_resultado = "int";
+					}
+
+					if(!atribuicaoCompativel(var->tipo, tipo_resultado)) {
+						yyerror("Resultado de " + op + "= eh " + tipo_resultado + ", incompativel com " + var->tipo);
+						exit(1);
+					}
+
+					string traducao = $3.traducao;
+					string op1 = var->nome_interno;
+					string op3 = $3.label;
+
+					if(var->tipo == "int" && tipo_resultado == "float") {
+						string temp_cast = gentempcode();
+						addVar(temp_cast, "float");
+						traducao += "\t" + temp_cast + " = (float) " + var->nome_interno + ";\n";
+						op1 = temp_cast;
+					}
+
+					if($3.tipo == "int" && tipo_resultado == "float") {
+						string temp_cast = gentempcode();
+						addVar(temp_cast, "float");
+						traducao += "\t" + temp_cast + " = (float) " + $3.label + ";\n";
+						op3 = temp_cast;
+					}
+
+					string resultado = gentempcode();
+					addVar(resultado, tipo_resultado);
+
+					traducao += "\t" + resultado + " = " + op1 + " " + op + " " + op3 + ";\n";
+
+					if(var->tipo != tipo_resultado) {
+						string temp_cast = gentempcode();
+						addVar(temp_cast, var->tipo);
+						traducao += "\t" + temp_cast + " = (" + var->tipo + ") " + resultado + ";\n";
+						resultado = temp_cast;
+					}
+
+					traducao += "\t" + var->nome_interno + " = " + resultado + ";\n";
+
+					$$.traducao = traducao;
+				}
+			}
 			| TK_ID TK_PP
 			{
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, $1.tipo);
@@ -1192,6 +1549,60 @@ ATRIB		: TK_ID '=' E
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
 				}
 			}
+			| TK_PP TK_ID
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($2.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel '" + $2.label + "' nao foi declarada");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+
+				if(!isNumerico(var->tipo)) {
+					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador ++");
+					exit(1);
+				}
+
+				$$.label = var->nome_interno;
+				$$.tipo = var->tipo;
+				$$.tam = "";
+
+				if(var->tipo == "float") {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
+				}
+				else {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
+				}
+			}
+			| TK_MM TK_ID
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($2.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Variavel '" + $2.label + "' nao foi declarada");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+
+				if(!isNumerico(var->tipo)) {
+					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador --");
+					exit(1);
+				}
+
+				$$.label = var->nome_interno;
+				$$.tipo = var->tipo;
+				$$.tam = "";
+
+				if(var->tipo == "float") {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1.0;\n";
+				}
+				else {
+					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
+				}
+			}
 			;
 %%
 
@@ -1208,97 +1619,198 @@ string cabecalho() {
 					"using namespace std;\n\n"
 
 					"char* read_string(int* tam) {\n"
-					"\tint capacidade = 16;\n"
-					"\tint tamanho = 0;\n"
-					"\tint c;\n"
-					"\tchar* str = (char*) malloc(capacidade);\n\n"
+					"\tint t1;\n"
+					"\tint t2;\n"
+					"\tint t3;\n"
+					"\tint t5;\n"
+					"\tint t6;\n"
+					"\tint t7;\n"
+					"\tint t8;\n"
+					"\tint t9;\n"
+					"\tint t10;\n"
+					"\tint t11;\n"
+					"\tint t12;\n"
+					"\tint t13;\n"
+					"\tint t14;\n"
+					"\tint t15;\n"
+					"\tchar* t4;\n\n"
 
-					"\tc = getchar();\n\n"
+					"\tt1 = 16;\n"
+					"\tt2 = 0;\n"
+					"\tt4 = (char*) malloc(t1);\n"
+					"\tt3 = getchar();\n\n"
 
-					"\twhile(c == '\\n' || c == '\\r') {\n"
-					"\t\tc = getchar();\n"
-					"\t}\n\n"
+					"read_string_skip:\n"
+					"\tt5 = t3 == '\\n';\n"
+					"\tt6 = t3 == '\\r';\n"
+					"\tt7 = t5 || t6;\n"
+					"\tif (!t7) goto read_string_loop;\n"
+					"\tt3 = getchar();\n"
+					"\tgoto read_string_skip;\n\n"
 
-					"\twhile(c != EOF && c != '\\n' && c != '\\r') {\n"
-					"\t\tif(tamanho + 1 >= capacidade) {\n"
-					"\t\t\tcapacidade = capacidade * 2;\n"
-					"\t\t\tstr = (char*) realloc(str, capacidade);\n"
-					"\t\t}\n\n"
+					"read_string_loop:\n"
+					"\tt8 = t3 == EOF;\n"
+					"\tt9 = t3 == '\\n';\n"
+					"\tt10 = t3 == '\\r';\n"
+					"\tt11 = t8 || t9;\n"
+					"\tt12 = t11 || t10;\n"
+					"\tt13 = !t12;\n"
+					"\tif (!t13) goto read_string_fim;\n\n"
 
-					"\t\tstr[tamanho] = (char) c;\n"
-					"\t\ttamanho = tamanho + 1;\n"
-					"\t\tc = getchar();\n"
-					"\t}\n\n"
+					"\tt14 = t2 + 1;\n"
+					"\tt15 = t14 >= t1;\n"
+					"\tif (!t15) goto read_string_copia;\n\n"
 
-					"\tstr[tamanho] = '\\0';\n"
-					"\t*tam = tamanho + 1;\n"
-					"\treturn str;\n"
+					"\tt1 = t1 * 2;\n"
+					"\tt4 = (char*) realloc(t4, t1);\n\n"
+
+					"read_string_copia:\n"
+					"\tt4[t2] = (char) t3;\n"
+					"\tt2 = t2 + 1;\n"
+					"\tt3 = getchar();\n"
+					"\tgoto read_string_loop;\n\n"
+
+					"read_string_fim:\n"
+					"\tt4[t2] = '\\0';\n"
+					"\t*tam = t2 + 1;\n"
+					"\treturn t4;\n"
 					"}\n\n"
 
 					"char* read_token(int* tam) {\n"
-					"\tint capacidade = 16;\n"
-					"\tint tamanho = 0;\n"
-					"\tint c;\n"
-					"\tchar* str = (char*) malloc(capacidade);\n\n"
+					"\tint t1;\n"
+					"\tint t2;\n"
+					"\tint t3;\n"
+					"\tint t5;\n"
+					"\tint t6;\n"
+					"\tint t7;\n"
+					"\tint t8;\n"
+					"\tint t9;\n"
+					"\tint t10;\n"
+					"\tint t11;\n"
+					"\tint t12;\n"
+					"\tint t13;\n"
+					"\tint t14;\n"
+					"\tint t15;\n"
+					"\tint t16;\n"
+					"\tint t17;\n"
+					"\tint t18;\n"
+					"\tint t19;\n"
+					"\tint t20;\n"
+					"\tint t21;\n"
+					"\tint t22;\n"
+					"\tchar* t4;\n\n"
 
-					"\tc = getchar();\n\n"
+					"\tt1 = 16;\n"
+					"\tt2 = 0;\n"
+					"\tt4 = (char*) malloc(t1);\n"
+					"\tt3 = getchar();\n\n"
 
-					"\twhile(c == ' ' || c == '\\n' || c == '\\t' || c == '\\r') {\n"
-					"\t\tc = getchar();\n"
-					"\t}\n\n"
+					"read_token_skip:\n"
+					"\tt5 = t3 == ' ';\n"
+					"\tt6 = t3 == '\\n';\n"
+					"\tt7 = t3 == '\\t';\n"
+					"\tt8 = t3 == '\\r';\n"
+					"\tt9 = t5 || t6;\n"
+					"\tt10 = t7 || t8;\n"
+					"\tt11 = t9 || t10;\n"
+					"\tif (!t11) goto read_token_loop;\n"
+					"\tt3 = getchar();\n"
+					"\tgoto read_token_skip;\n\n"
 
-					"\twhile(c != EOF && c != ' ' && c != '\\n' && c != '\\t' && c != '\\r') {\n"
-					"\t\tif(tamanho + 1 >= capacidade) {\n"
-					"\t\t\tcapacidade = capacidade * 2;\n"
-					"\t\t\tstr = (char*) realloc(str, capacidade);\n"
-					"\t\t}\n\n"
+					"read_token_loop:\n"
+					"\tt12 = t3 == EOF;\n"
+					"\tt13 = t3 == ' ';\n"
+					"\tt14 = t3 == '\\n';\n"
+					"\tt15 = t3 == '\\t';\n"
+					"\tt16 = t3 == '\\r';\n"
+					"\tt17 = t12 || t13;\n"
+					"\tt18 = t14 || t15;\n"
+					"\tt19 = t17 || t18;\n"
+					"\tt20 = t19 || t16;\n"
+					"\tt21 = !t20;\n"
+					"\tif (!t21) goto read_token_fim;\n\n"
 
-					"\t\tstr[tamanho] = (char) c;\n"
-					"\t\ttamanho = tamanho + 1;\n"
-					"\t\tc = getchar();\n"
-					"\t}\n\n"
+					"\tt22 = t2 + 1;\n"
+					"\tt5 = t22 >= t1;\n"
+					"\tif (!t5) goto read_token_copia;\n\n"
 
-					"\tstr[tamanho] = '\\0';\n"
-					"\t*tam = tamanho + 1;\n"
-					"\treturn str;\n"
+					"\tt1 = t1 * 2;\n"
+					"\tt4 = (char*) realloc(t4, t1);\n\n"
+
+					"read_token_copia:\n"
+					"\tt4[t2] = (char) t3;\n"
+					"\tt2 = t2 + 1;\n"
+					"\tt3 = getchar();\n"
+					"\tgoto read_token_loop;\n\n"
+
+					"read_token_fim:\n"
+					"\tt4[t2] = '\\0';\n"
+					"\t*tam = t2 + 1;\n"
+					"\treturn t4;\n"
 					"}\n\n"
 
 					"int read_int() {\n"
-					"\tint tam;\n"
-					"\tchar* str = read_token(&tam);\n"
-					"\tint valor = atoi(str);\n"
-					"\tfree(str);\n"
-					"\treturn valor;\n"
+					"\tint t1;\n"
+					"\tchar* t2;\n"
+					"\tint t3;\n\n"
+
+					"\tt2 = read_token(&t1);\n"
+					"\tt3 = atoi(t2);\n"
+					"\tfree(t2);\n"
+					"\treturn t3;\n"
 					"}\n\n"
 
 					"float read_float() {\n"
-					"\tint tam;\n"
-					"\tchar* str = read_token(&tam);\n"
-					"\tfloat valor = atof(str);\n"
-					"\tfree(str);\n"
-					"\treturn valor;\n"
+					"\tint t1;\n"
+					"\tchar* t2;\n"
+					"\tfloat t3;\n\n"
+
+					"\tt2 = read_token(&t1);\n"
+					"\tt3 = atof(t2);\n"
+					"\tfree(t2);\n"
+					"\treturn t3;\n"
 					"}\n\n"
 
 					"char read_char() {\n"
-					"\tint tam;\n"
-					"\tchar* str = read_token(&tam);\n"
-					"\tchar valor = str[0];\n"
-					"\tfree(str);\n"
-					"\treturn valor;\n"
+					"\tint t1;\n"
+					"\tchar* t2;\n"
+					"\tchar t3;\n\n"
+
+					"\tt2 = read_token(&t1);\n"
+					"\tt3 = t2[0];\n"
+					"\tfree(t2);\n"
+					"\treturn t3;\n"
 					"}\n\n"
 
 					"int read_bool() {\n"
-					"\tint tam;\n"
-					"\tchar* str = read_token(&tam);\n"
-					"\tint valor = 0;\n"
-					"\tif(strcmp(str, \"true\") == 0 || strcmp(str, \"1\") == 0) {\n"
-					"\t\tvalor = 1;\n"
-					"\t}\n"
-					"\tfree(str);\n"
-					"\treturn valor;\n"
+					"\tint t1;\n"
+					"\tchar* t2;\n"
+					"\tint t3;\n"
+					"\tint t4;\n"
+					"\tint t5;\n\n"
+
+					"\tt2 = read_token(&t1);\n"
+					"\tt3 = 0;\n\n"
+
+					"\tt4 = strcmp(t2, \"true\") == 0;\n"
+					"\tif (!t4) goto read_bool_testar_um;\n\n"
+
+					"\tt3 = 1;\n"
+					"\tgoto read_bool_fim;\n\n"
+
+					"read_bool_testar_um:\n"
+					"\tt5 = strcmp(t2, \"1\") == 0;\n"
+					"\tif (!t5) goto read_bool_fim;\n\n"
+
+					"\tt3 = 1;\n\n"
+
+					"read_bool_fim:\n"
+					"\tfree(t2);\n"
+					"\treturn t3;\n"
 					"}\n\n"
 
 					"int main(void) {\n";
+
 	return codigo;
 }
 
@@ -1442,9 +1954,160 @@ void fechar_escopo() {
 	tabelas.pop_back();
 }
 
+void addParametroFuncao(string nome, string tipo) {
+	if(pilha_funcao.empty()) {
+		yyerror("Parametro declarado fora de funcao");
+		exit(1);
+	}
+
+	string interno = gentempcode();
+	addVar(nome, tipo, false, interno);
+
+	tuple<bool, bool, variavel*> exists = existsVar(nome, "any");
+	variavel* var = get<2>(exists);
+
+	argumento a;
+	a.label = var->nome_interno;
+	a.traducao = "";
+	a.tipo = var->tipo;
+	a.tam = var->tam;
+
+	funcoes[pilha_funcao.back()].parametros.push_back(a);
+}
+
+string gerar_atribuicao_valor(string destino, string destino_tam, string destino_tipo, atributos origem_attr) {
+	string traducao = origem_attr.traducao;
+	string origem = origem_attr.label;
+
+	if(isNumerico(destino_tipo) && isNumerico(origem_attr.tipo) && destino_tipo != origem_attr.tipo) {
+		string temp_cast = gentempcode();
+		addVar(temp_cast, destino_tipo);
+		traducao += "\t" + temp_cast + " = (" + destino_tipo + ") " + origem_attr.label + ";\n";
+		origem = temp_cast;
+	}
+
+	if(destino_tipo == "string") {
+		if(origem_attr.tipo == "char") {
+			traducao += "\t" + destino_tam + " = 2;\n";
+			traducao += "\t" + destino + " = (char*) malloc(" + destino_tam + ");\n";
+			traducao += "\t" + destino + "[0] = " + origem + ";\n";
+			traducao += "\t" + destino + "[1] = '\\0';\n";
+		}
+		else {
+			traducao += "\t" + destino + " = (char*) malloc(" + origem_attr.tam + ");\n";
+			traducao += "\tstrcpy(" + destino + ", " + origem + ");\n";
+			traducao += "\t" + destino_tam + " = " + origem_attr.tam + ";\n";
+		}
+	}
+	else {
+		traducao += "\t" + destino + " = " + origem + ";\n";
+	}
+
+	return traducao;
+}
+
+string gerar_chamada_funcao(string nome, vector<argumento> args, string &tipo, string &label, string &tam) {
+	if(funcoes.find(nome) == funcoes.end()) {
+		yyerror("Funcao " + nome + " nao foi declarada");
+		exit(1);
+	}
+
+	funcao &f = funcoes[nome];
+
+	if(!f.definida) {
+		yyerror("Funcao " + nome + " precisa ser declarada antes de ser chamada");
+		exit(1);
+	}
+
+	if(args.size() != f.parametros.size()) {
+		yyerror("Funcao " + nome + " esperava " + to_string(f.parametros.size()) + " argumento(s), mas recebeu " + to_string(args.size()));
+		exit(1);
+	}
+
+	string traducao = "";
+
+	for(int i = 0; i < args.size(); i++) {
+		argumento param = f.parametros[i];
+		argumento arg = args[i];
+
+		if(!atribuicaoCompativel(param.tipo, arg.tipo)) {
+			yyerror("Argumento " + to_string(i + 1) + " da funcao " + nome + " deveria ser " + param.tipo + ", mas recebeu " + arg.tipo);
+			exit(1);
+		}
+
+		atributos attr_arg;
+		attr_arg.label = arg.label;
+		attr_arg.traducao = arg.traducao;
+		attr_arg.tipo = arg.tipo;
+		attr_arg.tam = arg.tam;
+
+		traducao += gerar_atribuicao_valor(param.label, param.tam, param.tipo, attr_arg);
+	}
+
+	chamada_funcao_qnt++;
+	string retorno = get_label_temp("ret_" + nome);
+	f.retornos.push_back({chamada_funcao_qnt, retorno});
+
+	traducao += "\t" + f.var_chamada + " = " + to_string(chamada_funcao_qnt) + ";\n";
+	traducao += "\tgoto " + f.label + ";\n";
+	traducao += retorno + ":\n";
+
+	tipo = f.tipo_retorno;
+	tam = "";
+	label = "";
+
+	if(tipo != "void") {
+		label = gentempcode();
+		addVar(label, tipo);
+
+		if(tipo == "string") {
+			tam = label + "_tam";
+
+			atributos ret_attr;
+			ret_attr.label = f.var_retorno;
+			ret_attr.traducao = "";
+			ret_attr.tipo = "string";
+			ret_attr.tam = f.var_retorno + "_tam";
+
+			traducao += gerar_atribuicao_valor(label, tam, "string", ret_attr);
+		}
+		else {
+			traducao += "\t" + label + " = " + f.var_retorno + ";\n";
+		}
+	}
+
+	return traducao;
+}
+
+string montar_codigo_funcoes() {
+	string codigo = "";
+
+	for(auto &item : funcoes) {
+		funcao &f = item.second;
+
+		codigo += f.label + ":\n";
+		codigo += f.corpo;
+		codigo += f.fim_label + ":\n";
+
+		for(int i = 0; i < f.retornos.size(); i++) {
+			string temp = gentempcode();
+			addVar(temp, "bool");
+
+			codigo += "\t" + temp + " = " + f.var_chamada + " == " + to_string(f.retornos[i].first) + ";\n";
+			codigo += "\tif (" + temp + ") goto " + f.retornos[i].second + ";\n";
+		}
+
+		codigo += "\tgoto fim_programa;\n";
+	}
+
+	return codigo;
+}
+
 
 string footer() {
-	string codigo = "\treturn 0;\n}\n";
+	string codigo = "\tgoto fim_programa;\n";
+	codigo += "fim_programa:\n";
+	codigo += "\treturn 0;\n}\n";
 
 	return codigo;
 }
@@ -1503,14 +2166,20 @@ int main(int argc, char* argv[])
 	var_temp_qnt = 0;
 	var_chave_qnt = 0;
 	label_qnt = 0;
+	chamada_funcao_qnt = 0;
 	abrir_escopo();
 
 	if (yyparse() == 0) {
+		string codigo_funcoes = montar_codigo_funcoes();
+
 		cout << cabecalho();
 		cout << variaveis << endl;
+		cout << "\tgoto inicio_programa;\n";
+		cout << codigo_funcoes;
+		cout << "inicio_programa:\n";
 		cout << codigo_gerado;
 		cout << footer();
-	}
+}
 
 	return 0;
 }
