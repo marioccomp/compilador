@@ -22,7 +22,9 @@ translate: glf
 		./glf < $(FILE)
 
 run: glf
-		./glf < $(FILE) > /tmp/foca_output.c && gcc /tmp/foca_output.c -o /tmp/foca_output && /tmp/foca_output
+	./glf < $(FILE) > saida.cpp
+	g++ saida.cpp -o saida
+	./saida
 
 test: glf
 	@pass=0; fail=0; \

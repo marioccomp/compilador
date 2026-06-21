@@ -11,9 +11,9 @@ MIN[a-z]
 MAIU[A-Z]
 VAR [_a-zA-Z][_a-zA-Z0-9]*
 DELIM {ESPACO}+
-FLOAT ({DIGITO}+"."{DIGITO}*)|({DIGITO}*"."{DIGITO}+)
+FLOAT ({DIGITO}+"."{DIGITO}+)|("."{DIGITO}+)
 NUM {DIGITO}+
-
+%x COMENTARIO_BLOCO
 
 %%
 
@@ -85,6 +85,8 @@ NUM {DIGITO}+
 (?i:cout)    {return TK_COUT;}
 (?i:func)   {return TK_FUNC;}
 (?i:return) {return TK_RETURN;}
+(?i:let)    {return TK_LET;}
+(?i:const)    {return TK_CONST;}
 ">>"        {return TK_RR;}
 "<<"        {return TK_LL;}
 \"[^\"]*\" { yylval.label = yytext; return TK_STRING_LIT;}
@@ -94,6 +96,30 @@ NUM {DIGITO}+
 "default"  { return TK_DEFAULT; }
 "++"        {return TK_PP;}
 "--"        {return TK_MM;}
+"//".*                  { }
+
+"/*"                    { BEGIN(COMENTARIO_BLOCO); }
+
+<COMENTARIO_BLOCO>"*/"  { BEGIN(INITIAL); }
+<COMENTARIO_BLOCO>\r\n  { linha++; }
+<COMENTARIO_BLOCO>\n    { linha++; }
+<COMENTARIO_BLOCO>\r    { linha++; }
+<COMENTARIO_BLOCO>.     { }
+<COMENTARIO_BLOCO><<EOF>> {
+    fprintf(stderr, "Erro: comentario de bloco nao fechado\n");
+    exit(1);
+}
+
+".."                    { return TK_DOTDOT; }
+
+"**"                    { yylval.label = yytext; return TK_POW; }
+"%"                     { yylval.label = yytext; return TK_MOD; }
+
+"sqrt"                  { return TK_SQRT; }
+"abs"                   { return TK_ABS; }
+"min"                   { return TK_MIN; }
+"max"                   { return TK_MAX; }
+
 
 
 

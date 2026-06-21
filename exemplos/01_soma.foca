@@ -1,9 +1,5 @@
-while(2 < 3) {
-for(; ; ) {
-    for(;;) {
-        for(;;) {
-            continue all;
-        }
-    }
+func subfaixa():1..20 {
+    return 30;
 }
-}
+
+subfaixa()

@@ -25,10 +25,12 @@ struct variavel
 	string tipo;
 	string valor;
 	string tam;
+	bool constante;
 };
 
 struct argumento
 {
+	string nome;
 	string label;
 	string traducao;
 	string tipo;
@@ -44,6 +46,7 @@ struct funcao
 	string var_chamada;
 	string fim_label;
 	string corpo;
+	string variaveis;
 	vector<argumento> parametros;
 	vector<pair<int, string>> retornos;
 	bool definida;
@@ -98,6 +101,20 @@ void addParametroFuncao(string nome, string tipo);
 string gerar_atribuicao_valor(string destino, string destino_tam, string destino_tipo, atributos origem_attr);
 string gerar_chamada_funcao(string nome, vector<argumento> args, string &tipo, string &label, string &tam);
 string montar_codigo_funcoes();
+void tiparVarDinamica(variavel* var, string tipo);
+void verificarVarTipada(variavel* var, string nome);
+void verificarNaoConstante(variavel* var, string nome);
+void verificarExpressaoComValor(atributos attr, string contexto);
+string tipo_c(string tipo);
+void addDeclaracao(string declaracao);
+string assinatura_funcao(funcao &f, bool com_nome_parametro);
+string gerar_retorno_funcao(funcao &f, atributos ret);
+bool isSubfaixa(string tipo);
+bool isInteiro(string tipo);
+int subfaixaMin(string tipo);
+int subfaixaMax(string tipo);
+string gerar_verificacao_subfaixa(string nome_var, string tipo);
+
 %}
 
 %token TK_NUM
@@ -136,6 +153,15 @@ string montar_codigo_funcoes();
 %token TK_FUNC
 %token TK_RETURN
 %token TK_ALL
+%token TK_LET
+%token TK_CONST
+%token TK_POW
+%token TK_MOD
+%token TK_SQRT
+%token TK_ABS
+%token TK_MIN
+%token TK_MAX
+%token TK_DOTDOT
 
 %start S
 
@@ -143,8 +169,9 @@ string montar_codigo_funcoes();
 %left TK_AND
 %left TK_RELACIONAL
 %left '+' '-'
-%left '*' '/'
+%left '*' '/' TK_MOD
 %right TK_NOT TK_CAST TK_NEG
+%right TK_POW
 
 
 %%
@@ -573,7 +600,7 @@ CORPO_CASE  : INICIO
                 $$.traducao = $2.traducao;
             }
             ;
-BREAK		: TK_BREAK TK_ALL
+BREAK		: TK_BREAK ALL
 			{
 				if(pilha_break.empty()) {
 					yyerror("Nao existe loop para dar break");
@@ -621,19 +648,18 @@ INICIO_FUNCAO : TK_FUNC TK_ID '('
 
 				funcao f;
 				f.nome = $2.label;
-				f.label = "func_" + $2.label;
+				f.label = $2.label;
 				f.tipo_retorno = "";
-				f.var_retorno = gentempcode();
-				f.var_chamada = gentempcode();
-				f.fim_label = get_label_temp("fim_func_" + $2.label);
+				f.var_retorno = "";
+				f.var_chamada = "";
+				f.fim_label = "";
 				f.corpo = "";
+				f.variaveis = "";
 				f.definida = false;
 				f.tem_return = false;
 				f.retorno_tipado = false;
 
 				funcoes[$2.label] = f;
-
-				addVar(f.var_chamada, "int");
 
 				abrir_escopo();
 				pilha_funcao.push_back($2.label);
@@ -666,8 +692,6 @@ RETORNO_FUNC :
 				f.tipo_retorno = $2.tipo;
 				f.retorno_tipado = true;
 
-				addVar(f.var_retorno, f.tipo_retorno);
-
 				$$.tipo = $2.tipo;
 			}
 			;
@@ -676,9 +700,9 @@ LISTA_PARAMS_FUNC : PARAM_FUNC
 			| LISTA_PARAMS_FUNC ',' PARAM_FUNC
 			;
 
-PARAM_FUNC : TIPO TK_ID
+PARAM_FUNC : TK_ID ':' TIPO
 			{
-				addParametroFuncao($2.label, $1.tipo);
+				addParametroFuncao($1.label, $3.tipo);
 			}
 			;
 
@@ -716,19 +740,10 @@ RETURN     : TK_RETURN E
 				string nome_funcao = pilha_funcao.back();
 				funcao &f = funcoes[nome_funcao];
 
-				if(f.tipo_retorno == "") {
-					f.tipo_retorno = $2.tipo;
-					addVar(f.var_retorno, f.tipo_retorno);
-				}
-				else if(!atribuicaoCompativel(f.tipo_retorno, $2.tipo)) {
-					yyerror("Retorno da funcao " + nome_funcao + " deveria ser " + f.tipo_retorno + ", mas recebeu " + $2.tipo);
-					exit(1);
-				}
-
 				f.tem_return = true;
 
-				$$.traducao = gerar_atribuicao_valor(f.var_retorno, f.var_retorno + "_tam", f.tipo_retorno, $2);
-				$$.traducao += "\tgoto " + f.fim_label + ";\n";
+				verificarExpressaoComValor($2, "como valor de return");
+				$$.traducao = gerar_retorno_funcao(f, $2);
 			}
 			;
 
@@ -742,9 +757,23 @@ ARGS       :
 			}
 			;
 
-LISTA_ARGS : E
+LISTA_ARGS : ARG_CHAMADA
 			{
+				$$.args = $1.args;
+			}
+			| LISTA_ARGS ',' ARG_CHAMADA
+			{
+				$$.args = $1.args;
+				$$.args.push_back($3.args[0]);
+			}
+			;
+
+ARG_CHAMADA : E
+			{
+				verificarExpressaoComValor($1, "como argumento de funcao");
+
 				argumento a;
+				a.nome = "";
 				a.label = $1.label;
 				a.traducao = $1.traducao;
 				a.tipo = $1.tipo;
@@ -753,15 +782,18 @@ LISTA_ARGS : E
 				$$.args.clear();
 				$$.args.push_back(a);
 			}
-			| LISTA_ARGS ',' E
+			| TK_ID '=' E
 			{
+				verificarExpressaoComValor($3, "como argumento de funcao");
+
 				argumento a;
+				a.nome = $1.label;
 				a.label = $3.label;
 				a.traducao = $3.traducao;
 				a.tipo = $3.tipo;
 				a.tam = $3.tam;
 
-				$$.args = $1.args;
+				$$.args.clear();
 				$$.args.push_back(a);
 			}
 			;
@@ -790,6 +822,18 @@ TIPO		: TK_INT
 			| TK_STRING
 			{
 				$$.tipo = "string";
+			}
+			| TK_NUM TK_DOTDOT TK_NUM
+			{
+				int min = stoi($1.label);
+				int max = stoi($3.label);
+
+				if(min > max) {
+					yyerror("Subfaixa invalida: limite inicial maior que limite final");
+					exit(1);
+				}
+
+				$$.tipo = "subfaixa:" + $1.label + ":" + $3.label;
 			}
 
 			;
@@ -835,14 +879,18 @@ CIN			: TK_CIN TK_RR TK_ID
 
 				variavel* var = get<2>(exists);
 
+				verificarVarTipada(var, $3.label);
+				verificarNaoConstante(var, $3.label);
+
 				string traducao = "";
 
 				if(var->tipo == "string") {
 					traducao += "\tfree(" + var->nome_interno + ");\n";
 					traducao += "\t" + var->nome_interno + " = read_string(&" + var->tam + ");\n";
 				}
-				else if(var->tipo == "int") {
+				else if(var->tipo == "int" || isSubfaixa(var->tipo)) {
 					traducao += "\t" + var->nome_interno + " = read_int();\n";
+					traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 				}
 				else if(var->tipo == "float") {
 					traducao += "\t" + var->nome_interno + " = read_float();\n";
@@ -868,6 +916,8 @@ COUT		: TK_COUT TK_LL TK_ID
 
 				variavel* var = get<2>(exists);
 
+				verificarVarTipada(var, $3.label);
+
 				string traducao = "\tcout << " + var->nome_interno + ";\n";
 				$$.traducao = traducao;		
 			}
@@ -877,7 +927,136 @@ COUT		: TK_COUT TK_LL TK_ID
 				$$.traducao = traducao;	
 			}
 			;
-E 			: E '+' E
+E 			: E TK_POW E
+			{
+				if(!isNumerico($1.tipo) || !isNumerico($3.tipo)) {
+					yyerror("Exponenciacao so aceita tipos numericos");
+					exit(1);
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, "float");
+
+				$$.tipo = "float";
+				$$.tam = "";
+
+				$$.traducao = $1.traducao + $3.traducao;
+				$$.traducao += "\t" + $$.label + " = pow(" + $1.label + ", " + $3.label + ");\n";
+			}
+			| E TK_MOD E
+			{
+				if(!isInteiro($1.tipo) || !isInteiro($3.tipo)) {
+					yyerror("Operador % so aceita inteiros");
+					exit(1);
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, "int");
+
+				$$.tipo = "int";
+				$$.tam = "";
+
+				$$.traducao = $1.traducao + $3.traducao;
+				$$.traducao += "\t" + $$.label + " = " + $1.label + " % " + $3.label + ";\n";
+			}
+			| TK_SQRT '(' E ')'
+			{
+				if(!isNumerico($3.tipo)) {
+					yyerror("sqrt so aceita tipo numerico");
+					exit(1);
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, "float");
+
+				$$.tipo = "float";
+				$$.tam = "";
+
+				$$.traducao = $3.traducao;
+				$$.traducao += "\t" + $$.label + " = sqrt(" + $3.label + ");\n";
+			}
+			| TK_ABS '(' E ')'
+			{
+				if(!isNumerico($3.tipo)) {
+					yyerror("abs so aceita tipo numerico");
+					exit(1);
+				}
+
+				string tipo_resultado;
+
+				if(tipo_c($3.tipo) == "float") {
+					tipo_resultado = "float";
+				}
+				else {
+					tipo_resultado = "int";
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, tipo_resultado);
+
+				$$.tipo = tipo_resultado;
+				$$.tam = "";
+
+				$$.traducao = $3.traducao;
+
+				if(tipo_resultado == "float") {
+					$$.traducao += "\t" + $$.label + " = fabs(" + $3.label + ");\n";
+				}
+				else {
+					$$.traducao += "\t" + $$.label + " = abs(" + $3.label + ");\n";
+				}
+			}
+			| TK_MIN '(' E ',' E ')'
+			{
+				if(!isNumerico($3.tipo) || !isNumerico($5.tipo)) {
+					yyerror("min so aceita tipos numericos");
+					exit(1);
+				}
+
+				string tipo_resultado;
+
+				if(tipo_c($3.tipo) == "float" || tipo_c($5.tipo) == "float") {
+					tipo_resultado = "float";
+				}
+				else {
+					tipo_resultado = "int";
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, tipo_resultado);
+
+				$$.tipo = tipo_resultado;
+				$$.tam = "";
+
+				$$.traducao = $3.traducao + $5.traducao;
+				$$.traducao += "\t" + $$.label + " = " + $3.label + " < " + $5.label + " ? " + $3.label + " : " + $5.label + ";\n";
+			}
+			| TK_MAX '(' E ',' E ')'
+			{
+				if(!isNumerico($3.tipo) || !isNumerico($5.tipo)) {
+					yyerror("max so aceita tipos numericos");
+					exit(1);
+				}
+
+				string tipo_resultado;
+
+				if(tipo_c($3.tipo) == "float" || tipo_c($5.tipo) == "float") {
+					tipo_resultado = "float";
+				}
+				else {
+					tipo_resultado = "int";
+				}
+
+				$$.label = gentempcode();
+				addVar($$.label, tipo_resultado);
+
+				$$.tipo = tipo_resultado;
+				$$.tam = "";
+
+				$$.traducao = $3.traducao + $5.traducao;
+				$$.traducao += "\t" + $$.label + " = " + $3.label + " > " + $5.label + " ? " + $3.label + " : " + $5.label + ";\n";
+			}
+			| E '+' E
 			{
 				bool soma_compativel = somaCompativel($1.tipo, $3.tipo);
 				if(!soma_compativel) {
@@ -986,7 +1165,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = $1.tipo;
+					tipo_resultado = "int";
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -1027,7 +1206,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = $1.tipo;
+					tipo_resultado = "int";
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -1068,7 +1247,7 @@ E 			: E '+' E
 					tipo_resultado = "float";
 				}
 				else {
-					tipo_resultado = $1.tipo;
+					tipo_resultado = "int";
 				}
 
 				string traducao = $1.traducao + $3.traducao;
@@ -1106,10 +1285,19 @@ E 			: E '+' E
 					yyerror("simbolo - invalido para o tipo " + $2.tipo);
 					exit(1);
 				}
+				string tipo_resultado;
+
+				if(tipo_c($2.tipo) == "float") {
+					tipo_resultado = "float";
+				}
+				else {
+					tipo_resultado = "int";
+				}
 
 				$$.label = gentempcode();
-				addVar($$.label, $2.tipo);
-				$$.tipo = $2.tipo;
+				addVar($$.label, tipo_resultado);
+				$$.tipo = tipo_resultado;
+				$$.tam = "";
 
 				$$.traducao = $2.traducao + "\t" + $$.label + " = -" + $2.label + ";\n";
 			}
@@ -1123,10 +1311,13 @@ E 			: E '+' E
 				$$.label = gentempcode();
 				addVar($$.label, $2.tipo);
 				$$.tipo = $2.tipo;
+				$$.tam = "";
 
-				string tipo = $2.tipo == "bool" ? "int" : $2.tipo;
+				string tipo = tipo_c($2.tipo);
 
-				$$.traducao = $4.traducao + "\t" + $$.label + " = (" + tipo + ") " + $4.label + ";\n";
+				$$.traducao = $4.traducao;
+				$$.traducao += "\t" + $$.label + " = (" + tipo + ") " + $4.label + ";\n";
+				$$.traducao += gerar_verificacao_subfaixa($$.label, $2.tipo);
 			}
 			| E TK_RELACIONAL E
 			{
@@ -1139,15 +1330,15 @@ E 			: E '+' E
 				string op1 = $1.label;
 				string op3 = $3.label;
 
-				if(isNumerico($1.tipo) && isNumerico($3.tipo) && $1.tipo != $3.tipo) {
-					if($1.tipo == "int") {
+				if(isNumerico($1.tipo) && isNumerico($3.tipo) && tipo_c($1.tipo) != tipo_c($3.tipo)) {
+					if(tipo_c($1.tipo) == "int" && tipo_c($3.tipo) == "float") {
 						string temp_cast = gentempcode();
 						addVar(temp_cast, "float");
 						traducao += "\t" + temp_cast + " = (float) " + $1.label + ";\n";
 						op1 = temp_cast;
 					}
 
-					if($3.tipo == "int") {
+					if(tipo_c($3.tipo) == "int" && tipo_c($1.tipo) == "float") {
 						string temp_cast = gentempcode();
 						addVar(temp_cast, "float");
 						traducao += "\t" + temp_cast + " = (float) " + $3.label + ";\n";
@@ -1214,6 +1405,9 @@ E 			: E '+' E
 					exit(1);
 				}
 				variavel* var = get<2>(exists);
+
+				verificarVarTipada(var, $1.label);
+
 				$$.label = var->nome_interno;
 				$$.tipo = var->tipo;
 				$$.tam = var->tam;
@@ -1254,7 +1448,7 @@ E 			: E '+' E
 				$$ = $1;
 			}
 			;
-D			: TIPO TK_ID
+D			: TK_LET TK_ID ':' TIPO
 			{
 				bool exists = exists_var_escopo_atual($2.label);
 				if(exists) {
@@ -1262,11 +1456,11 @@ D			: TIPO TK_ID
 					exit(1);
 				}
 				string var = gentempcode();
-				addVar($2.label, $1.tipo, false, var);
+				addVar($2.label, $4.tipo, false, var);
 
 				$$.traducao = "";
 
-				if($1.tipo == "string") {
+				if($4.tipo == "string") {
 					$$.traducao += "\t" + var + " = NULL;\n";
 					$$.traducao += "\t" + var + "_tam = 0;\n";
 				}
@@ -1275,71 +1469,208 @@ D			: TIPO TK_ID
 			{
 				$$.traducao = $1.traducao;
 			}
-			| TIPO TK_ID '=' E
+			| TK_LET TK_ID ':' TIPO '=' E
 			{
 				bool exists = exists_var_escopo_atual($2.label);
 				if(exists) {
 					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
 					exit(1);
 				}
-				if(!atribuicaoCompativel($1.tipo, $4.tipo)) { // aqui depois posso colocar a funcao que verifica se tipos sao compativeis
-					yyerror("Tipos incompativeis de atribuição (" + $1.tipo + ", " + $4.tipo + ")");
+				verificarExpressaoComValor($6, "na inicializacao da variavel " + $2.label);
+				if(!atribuicaoCompativel($4.tipo, $6.tipo)) { // aqui depois posso colocar a funcao que verifica se tipos sao compativeis
+					yyerror("Tipos incompativeis de atribuição (" + $4.tipo + ", " + $6.tipo + ")");
 					exit(1);
 				}
 				string var = gentempcode();
-				addVar($2.label, $1.tipo, false, var);
+				addVar($2.label, $4.tipo, false, var);
 
 				
 
-				string traducao = $4.traducao;
-				string origem = $4.label;
+				string traducao = $6.traducao;
+				string origem = $6.label;
 
-				if(isNumerico($1.tipo) && isNumerico($4.tipo) && $1.tipo != $4.tipo) {
+				if(isNumerico($4.tipo) && isNumerico($6.tipo) && tipo_c($4.tipo) != tipo_c($6.tipo)) {
 					string temp_cast = gentempcode();
-					addVar(temp_cast, $1.tipo);
-					traducao += "\t" + temp_cast + " = (" + $1.tipo + ") " + $4.label + ";\n";
+					addVar(temp_cast, $4.tipo);
+					traducao += "\t" + temp_cast + " = (" + tipo_c($4.tipo) + ") " + $6.label + ";\n";
 					origem = temp_cast;
 				}
 
 				$$.traducao = "";
 
-                if($1.tipo == "string") {
+                if($4.tipo == "string") {
                     $$.traducao += "\t" + var + " = NULL;\n";
                     $$.traducao += "\t" + var + "_tam = 0;\n";
                 }
 
                 $$.traducao += traducao;
 
-                if($1.tipo == "string") {
-					if($4.tipo == "char") {
+                if($4.tipo == "string") {
+					if($6.tipo == "char") {
 						$$.traducao += "\t" + var + "_tam = 2;\n";
 						$$.traducao += "\t" + var + " = (char*) malloc(" + var + "_tam);\n";
-						$$.traducao += "\t" + var + "[0] = " + $4.label + ";\n";
+						$$.traducao += "\t" + var + "[0] = " + $6.label + ";\n";
 						$$.traducao += "\t" + var + "[1] = '\\0';\n";
 					}
 					else {
-						$$.traducao += "\t" + var + " = (char*) malloc(" + $4.tam + ");\n";
-						$$.traducao += "\tstrcpy(" + var + ", " + $4.label + ");\n";
-						$$.traducao += "\t" + var + "_tam = " + $4.tam + ";\n";
+						$$.traducao += "\t" + var + " = (char*) malloc(" + $6.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + var + ", " + $6.label + ");\n";
+						$$.traducao += "\t" + var + "_tam = " + $6.tam + ";\n";
 					}
 				}
 				else {
 					$$.traducao += "\t" + var + " = " + origem + ";\n";
+					$$.traducao += gerar_verificacao_subfaixa(var, $4.tipo);
 				}
 
+			}
+			| TK_LET TK_ID
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addVar($2.label, "var", false, var);
+
+				$$.traducao = "";
+			}
+			| TK_LET TK_ID '=' E
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				verificarExpressaoComValor($4, "na inicializacao da variavel " + $2.label);
+
+				string var_nome = gentempcode();
+				addVar($2.label, "var", false, var_nome);
+
+				tuple<bool, bool, variavel*> exists_var = existsVar($2.label, "any");
+				variavel* var = get<2>(exists_var);
+
+				tiparVarDinamica(var, $4.tipo);
+
+				$$.traducao = "";
+
+				if(var->tipo == "string") {
+					$$.traducao += "\t" + var->nome_interno + " = NULL;\n";
+					$$.traducao += "\t" + var->tam + " = 0;\n";
+				}
+
+				$$.traducao += gerar_atribuicao_valor(var->nome_interno, var->tam, var->tipo, $4);
+			}
+			| TK_CONST TK_ID '=' E
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				verificarExpressaoComValor($4, "na inicializacao da variavel " + $2.label);
+
+				string var_nome = gentempcode();
+				addVar($2.label, "var", false, var_nome);
+
+				tuple<bool, bool, variavel*> exists_var = existsVar($2.label, "any");
+				variavel* var = get<2>(exists_var);
+
+				tiparVarDinamica(var, $4.tipo);
+				var->constante = true;
+
+				$$.traducao = "";
+
+				if(var->tipo == "string") {
+					$$.traducao += "\t" + var->nome_interno + " = NULL;\n";
+					$$.traducao += "\t" + var->tam + " = 0;\n";
+				}
+
+				$$.traducao += gerar_atribuicao_valor(var->nome_interno, var->tam, var->tipo, $4);
+			}
+			| TK_CONST TK_ID ':' TIPO '=' E
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				verificarExpressaoComValor($6, "na inicializacao da variavel " + $2.label);
+
+				if(!atribuicaoCompativel($4.tipo, $6.tipo)) {
+					yyerror("Tipos incompativeis de atribuição (" + $4.tipo + ", " + $6.tipo + ")");
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addVar($2.label, $4.tipo, false, var);
+
+				tuple<bool, bool, variavel*> exists_var = existsVar($2.label, "any");
+				variavel* var_info = get<2>(exists_var);
+				var_info->constante = true;
+
+				string traducao = $6.traducao;
+				string origem = $6.label;
+
+				if(isNumerico($4.tipo) && isNumerico($6.tipo) && tipo_c($4.tipo) != tipo_c($6.tipo)) {
+					string temp_cast = gentempcode();
+					addVar(temp_cast, $4.tipo);
+					traducao += "\t" + temp_cast + " = (" + tipo_c($4.tipo) + ") " + $6.label + ";\n";
+					origem = temp_cast;
+				}
+
+				$$.traducao = "";
+
+				if($4.tipo == "string") {
+					$$.traducao += "\t" + var + " = NULL;\n";
+					$$.traducao += "\t" + var + "_tam = 0;\n";
+				}
+
+				$$.traducao += traducao;
+
+				if($4.tipo == "string") {
+					if($6.tipo == "char") {
+						$$.traducao += "\t" + var + "_tam = 2;\n";
+						$$.traducao += "\t" + var + " = (char*) malloc(" + var + "_tam);\n";
+						$$.traducao += "\t" + var + "[0] = " + $6.label + ";\n";
+						$$.traducao += "\t" + var + "[1] = '\\0';\n";
+					}
+					else {
+						$$.traducao += "\t" + var + " = (char*) malloc(" + $6.tam + ");\n";
+						$$.traducao += "\tstrcpy(" + var + ", " + $6.label + ");\n";
+						$$.traducao += "\t" + var + "_tam = " + $6.tam + ";\n";
+					}
+				}
+				else {
+					$$.traducao += "\t" + var + " = " + origem + ";\n";
+					$$.traducao += gerar_verificacao_subfaixa(var, $4.tipo);
+				}
 			}
 			;
 ATRIB		: TK_ID '=' E
 			{
-				tuple<bool, bool, variavel*> exists = existsVar($1.label, $3.tipo);
-
-				variavel* var = get<2>(exists);
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
 
 				if(!get<0>(exists)) {
 					yyerror("Variavel '" + $1.label + "' nao foi declarada");
 					exit(1);
 				}
 
+				variavel* var = get<2>(exists);
+
+				verificarExpressaoComValor($3, "na atribuicao de " + $1.label);
+				verificarNaoConstante(var, $1.label);
+
+				bool primeira_atribuicao_var = var->tipo == "var";
+
+				if(primeira_atribuicao_var) {
+					tiparVarDinamica(var, $3.tipo);
+				}
 				else if(!atribuicaoCompativel(var->tipo, $3.tipo)) {
 					yyerror("A variavel " + $1.label + " eh do tipo " + var->tipo + " e vc tentou associar ela com um valor do tipo " + $3.tipo);
 					exit(1);
@@ -1347,16 +1678,23 @@ ATRIB		: TK_ID '=' E
 
 				string traducao = $3.traducao;
 				string origem = $3.label;
-				if(isNumerico(var->tipo) && isNumerico($3.tipo) && var->tipo != $3.tipo) {
+				if(isNumerico(var->tipo) && isNumerico($3.tipo) && tipo_c(var->tipo) != tipo_c($3.tipo)) {
 					string temp_cast = gentempcode();
 					addVar(temp_cast, var->tipo);
-					traducao += "\t" + temp_cast + " = (" + var->tipo + ") " + $3.label + ";\n";
+					traducao += "\t" + temp_cast + " = (" + tipo_c(var->tipo) + ") " + $3.label + ";\n";
 					origem = temp_cast;
 				}
 
 				var->valor = origem;
 				
-				$$.traducao = traducao;
+				$$.traducao = "";
+
+				if(primeira_atribuicao_var && var->tipo == "string") {
+					$$.traducao += "\t" + var->nome_interno + " = NULL;\n";
+					$$.traducao += "\t" + var->tam + " = 0;\n";
+				}
+
+				$$.traducao += traducao;
 
 				if(var->tipo == "string" && origem == var->nome_interno) {
 				}
@@ -1377,6 +1715,7 @@ ATRIB		: TK_ID '=' E
 				}
 				else {
 					$$.traducao += "\t" + var->nome_interno + " = " + origem + ";\n";
+					$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 				}
 			}
 			| TK_ID TK_ATRIB_COMP E
@@ -1389,6 +1728,8 @@ ATRIB		: TK_ID '=' E
 				}
 
 				variavel* var = get<2>(exists);
+				verificarExpressaoComValor($3, "no operador composto de " + $1.label);
+				verificarNaoConstante(var, $1.label);
 				string op = $2.label;
 
 				if(op == "+" && var->tipo == "string") {
@@ -1491,14 +1832,15 @@ ATRIB		: TK_ID '=' E
 
 					traducao += "\t" + resultado + " = " + op1 + " " + op + " " + op3 + ";\n";
 
-					if(var->tipo != tipo_resultado) {
+					if(tipo_c(var->tipo) != tipo_c(tipo_resultado)) {
 						string temp_cast = gentempcode();
 						addVar(temp_cast, var->tipo);
-						traducao += "\t" + temp_cast + " = (" + var->tipo + ") " + resultado + ";\n";
+						traducao += "\t" + temp_cast + " = (" + tipo_c(var->tipo) + ") " + resultado + ";\n";
 						resultado = temp_cast;
 					}
 
 					traducao += "\t" + var->nome_interno + " = " + resultado + ";\n";
+					traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 
 					$$.traducao = traducao;
 				}
@@ -1508,6 +1850,8 @@ ATRIB		: TK_ID '=' E
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, $1.tipo);
 
 				variavel* var = get<2>(exists);
+				
+
 
 				if(!get<0>(exists)) {
 					yyerror("Variavel '" + $1.label + "' nao foi declarada");
@@ -1519,12 +1863,16 @@ ATRIB		: TK_ID '=' E
 					exit(1);
 				}
 
+				verificarNaoConstante(var, $1.label);
+
 				if(var->tipo == "float") {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
 				}
 				else {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
 				}
+
+				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 			}
 			| TK_ID TK_MM
 			{
@@ -1537,6 +1885,8 @@ ATRIB		: TK_ID '=' E
 
 				variavel* var = get<2>(exists);
 
+				verificarNaoConstante(var, $1.label);
+
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador --");
 					exit(1);
@@ -1548,6 +1898,8 @@ ATRIB		: TK_ID '=' E
 				else {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
 				}
+
+				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 			}
 			| TK_PP TK_ID
 			{
@@ -1559,6 +1911,8 @@ ATRIB		: TK_ID '=' E
 				}
 
 				variavel* var = get<2>(exists);
+
+				verificarNaoConstante(var, $2.label);
 
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador ++");
@@ -1575,6 +1929,8 @@ ATRIB		: TK_ID '=' E
 				else {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
 				}
+
+				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 			}
 			| TK_MM TK_ID
 			{
@@ -1586,6 +1942,8 @@ ATRIB		: TK_ID '=' E
 				}
 
 				variavel* var = get<2>(exists);
+
+				verificarNaoConstante(var, $2.label);
 
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador --");
@@ -1602,6 +1960,8 @@ ATRIB		: TK_ID '=' E
 				else {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
 				}
+
+				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 			}
 			;
 %%
@@ -1615,6 +1975,7 @@ string cabecalho() {
 					"#include <stdio.h>\n"
 					"#include <stdlib.h>\n"
 					"#include <string.h>\n"
+					"#include <math.h>\n"
 					"#include <iostream>\n"
 					"using namespace std;\n\n"
 
@@ -1807,11 +2168,130 @@ string cabecalho() {
 					"read_bool_fim:\n"
 					"\tfree(t2);\n"
 					"\treturn t3;\n"
-					"}\n\n"
+					"}\n\n";
 
-					"int main(void) {\n";
 
 	return codigo;
+}
+
+string tipo_c(string tipo) {
+	if(tipo == "bool") return "int";
+	if(tipo == "string") return "char*";
+	if(tipo == "void") return "void";
+	if(isSubfaixa(tipo)) return "int";
+
+	return tipo;
+}
+
+void addDeclaracao(string declaracao) {
+	if(!pilha_funcao.empty()) {
+		string nome_funcao = pilha_funcao.back();
+		funcoes[nome_funcao].variaveis += declaracao;
+	}
+	else {
+		variaveis += declaracao;
+	}
+}
+
+string assinatura_funcao(funcao &f, bool com_nome_parametro) {
+	string assinatura = tipo_c(f.tipo_retorno) + " " + f.nome + "(";
+
+	for(int i = 0; i < f.parametros.size(); i++) {
+		if(i > 0) {
+			assinatura += ", ";
+		}
+
+		if(f.parametros[i].tipo == "string") {
+			assinatura += "char*";
+
+			if(com_nome_parametro) {
+				assinatura += " " + f.parametros[i].label;
+			}
+
+			assinatura += ", int";
+
+			if(com_nome_parametro) {
+				assinatura += " " + f.parametros[i].tam;
+			}
+		}
+		else {
+			assinatura += tipo_c(f.parametros[i].tipo);
+
+			if(com_nome_parametro) {
+				assinatura += " " + f.parametros[i].label;
+			}
+		}
+	}
+
+	assinatura += ")";
+	return assinatura;
+}
+
+string gerar_retorno_funcao(funcao &f, atributos ret) {
+	if(f.tipo_retorno == "") {
+		f.tipo_retorno = ret.tipo;
+	}
+	else if(!atribuicaoCompativel(f.tipo_retorno, ret.tipo)) {
+		yyerror("Retorno da funcao " + f.nome + " deveria ser " + f.tipo_retorno + ", mas recebeu " + ret.tipo);
+		exit(1);
+	}
+
+	string traducao = ret.traducao;
+	string origem = ret.label;
+
+	if(isNumerico(f.tipo_retorno) && isNumerico(ret.tipo) && tipo_c(f.tipo_retorno) != tipo_c(ret.tipo)) {
+		string temp_cast = gentempcode();
+		addVar(temp_cast, f.tipo_retorno);
+
+		traducao += "\t" + temp_cast + " = (" + tipo_c(f.tipo_retorno) + ") " + ret.label + ";\n";
+		origem = temp_cast;
+	}
+	else if(f.tipo_retorno == "string" && ret.tipo == "char") {
+		string temp_string = gentempcode();
+		addVar(temp_string, "string");
+
+		atributos attr;
+		attr.label = ret.label;
+		attr.traducao = "";
+		attr.tipo = ret.tipo;
+		attr.tam = ret.tam;
+
+		traducao += gerar_atribuicao_valor(temp_string, temp_string + "_tam", "string", attr);
+		origem = temp_string;
+	}
+
+	traducao += gerar_verificacao_subfaixa(origem, f.tipo_retorno);
+	traducao += "\treturn " + origem + ";\n";
+
+	return traducao;
+}
+
+void tiparVarDinamica(variavel* var, string tipo) {
+	if(var->tipo != "var") {
+		return;
+	}
+
+	var->tipo = tipo;
+
+	if(tipo == "bool") {
+		addDeclaracao("\tint " + var->nome_interno + ";\n");
+	}
+	else if(tipo == "string") {
+		var->tam = var->nome_interno + "_tam";
+		addDeclaracao("\tchar* " + var->nome_interno + ";\n");
+		addDeclaracao("\tint " + var->nome_interno + "_tam;\n");
+	}
+	else {
+		var->tam = "";
+		addDeclaracao("\t" + tipo_c(tipo) + " " + var->nome_interno + ";\n");
+	}
+}
+
+void verificarVarTipada(variavel* var, string nome) {
+	if(var->tipo == "var") {
+		yyerror("Variavel " + nome + " declarada com var ainda nao recebeu valor inicial");
+		exit(1);
+	}
 }
 
 void addVar(string nome, string tipo, bool interno, string nome_interno) {
@@ -1826,21 +2306,27 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		v.nome_interno = nome_interno;
 		v.tipo = tipo;
 		v.valor = "";
+		v.tam = "";
+		v.constante = false;
 		tabelas.back()[nome] = v;
+
+		if(tipo == "var") {
+			return;
+		}
 		// tabela[nome] = v;
 		if(tipo == "bool") {
-			variaveis += "\tint " + nome_interno + ";" + "\n";
+			addDeclaracao("\tint " + nome_interno + ";\n");
 			return;
 		}
 		if(tipo == "string") {
 			v.tam = nome_interno + "_tam";
 			v.valor = "";
-			variaveis += "\tchar* " + nome_interno + ";" + "\n";
-			variaveis += "\tint " + nome_interno + "_tam;\n";
+			addDeclaracao("\tchar* " + nome_interno + ";\n");
+			addDeclaracao("\tint " + nome_interno + "_tam;\n");
 			tabelas.back()[nome] = v;
 			return;
 		}
-		variaveis += "\t" + tipo + " " + nome_interno + ";" + "\n";
+		addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + ";\n");
 
 		return;
 	}
@@ -1848,27 +2334,96 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 	variavel var;
 	var.tipo = tipo;
 	var.nome_interno = nome;
+	var.valor = "";
+	var.tam = "";
+	var.constante = false;
 
 	string nome_temp = get_chave_temp(); 
 
 	tabelas.back()[nome_temp] = var;
 	if(tipo == "bool") {
-		variaveis += "\tint " + nome + ";" + "\n";
+		addDeclaracao("\tint " + nome + ";\n");
 		return;
 	}
 	if(tipo == "string") {
 			var.tam = nome + "_tam";
 			var.valor = "";
-			variaveis += "\tchar* " + nome+ ";" + "\n";
-			variaveis += "\tint " + nome + "_tam;\n";
+			addDeclaracao("\tchar* " + nome + ";\n");
+			addDeclaracao("\tint " + nome + "_tam;\n");
 			tabelas.back()[nome_temp] = var;
 			return;
 		}
-	variaveis += "\t" + tipo + " " + nome + ";" + "\n";
+	addDeclaracao("\t" + tipo_c(tipo) + " " + nome + ";\n");
+}
+
+void verificarNaoConstante(variavel* var, string nome) {
+	if(var->constante) {
+		yyerror("nao eh possivel alterar a constante " + nome);
+		exit(1);
+	}
+}
+
+void verificarExpressaoComValor(atributos attr, string contexto) {
+	if(attr.tipo == "void") {
+		yyerror("Funcao sem retorno nao pode ser usada " + contexto);
+		exit(1);
+	}
+}
+
+bool isSubfaixa(string tipo) {
+	return tipo.rfind("subfaixa:", 0) == 0;
+}
+
+int subfaixaMin(string tipo) {
+	int p1 = tipo.find(":");
+	int p2 = tipo.find(":", p1 + 1);
+
+	return stoi(tipo.substr(p1 + 1, p2 - p1 - 1));
+}
+
+int subfaixaMax(string tipo) {
+	int p1 = tipo.find(":");
+	int p2 = tipo.find(":", p1 + 1);
+
+	return stoi(tipo.substr(p2 + 1));
+}
+
+bool isInteiro(string tipo) {
+	return tipo == "int" || isSubfaixa(tipo);
+}
+
+string gerar_verificacao_subfaixa(string nome_var, string tipo) {
+	if(!isSubfaixa(tipo)) {
+		return "";
+	}
+
+	int min = subfaixaMin(tipo);
+	int max = subfaixaMax(tipo);
+
+	string menor = gentempcode();
+	string maior = gentempcode();
+	string erro = gentempcode();
+	string fim = get_label_temp("fim_subfaixa");
+
+	addVar(menor, "bool");
+	addVar(maior, "bool");
+	addVar(erro, "bool");
+
+	string traducao = "";
+
+	traducao += "\t" + menor + " = " + nome_var + " < " + to_string(min) + ";\n";
+	traducao += "\t" + maior + " = " + nome_var + " > " + to_string(max) + ";\n";
+	traducao += "\t" + erro + " = " + menor + " || " + maior + ";\n";
+	traducao += "\tif (!" + erro + ") goto " + fim + ";\n";
+	traducao += "\tprintf(\"Erro: valor fora da subfaixa [" + to_string(min) + ".." + to_string(max) + "]\\n\");\n";
+	traducao += "\texit(1);\n";
+	traducao += fim + ":\n";
+
+	return traducao;
 }
 
 bool isNumerico(string t) {
-	return t == "int" || t == "float";
+	return t == "int" || t == "float" || isSubfaixa(t);
 }
 
 bool isBool(string t) {
@@ -1895,6 +2450,14 @@ bool logicoCompativel(string t1, string t2) {
 
 bool atribuicaoCompativel(string t1, string t2) {
 	if(t1 == t2) return true;
+
+	if(isSubfaixa(t1)) {
+		return isInteiro(t2);
+	}
+
+	if(isSubfaixa(t2)) {
+		return t1 == "int";
+	}
 
 	if(isNumerico(t1) && isNumerico(t2)) return true;
 
@@ -1960,17 +2523,32 @@ void addParametroFuncao(string nome, string tipo) {
 		exit(1);
 	}
 
-	string interno = gentempcode();
-	addVar(nome, tipo, false, interno);
+	if(exists_var_escopo_atual(nome)) {
+		yyerror("Parametro " + nome + " ja foi declarado anteriormente");
+		exit(1);
+	}
 
-	tuple<bool, bool, variavel*> exists = existsVar(nome, "any");
-	variavel* var = get<2>(exists);
+	string interno = gentempcode();
+
+	variavel v;
+	v.nome_interno = interno;
+	v.tipo = tipo;
+	v.valor = "";
+	v.tam = "";
+	v.constante = false;
+
+	if(tipo == "string") {
+		v.tam = interno + "_tam";
+	}
+
+	tabelas.back()[nome] = v;
 
 	argumento a;
-	a.label = var->nome_interno;
+	a.nome = nome;
+	a.label = interno;
 	a.traducao = "";
-	a.tipo = var->tipo;
-	a.tam = var->tam;
+	a.tipo = tipo;
+	a.tam = v.tam;
 
 	funcoes[pilha_funcao.back()].parametros.push_back(a);
 }
@@ -1979,10 +2557,10 @@ string gerar_atribuicao_valor(string destino, string destino_tam, string destino
 	string traducao = origem_attr.traducao;
 	string origem = origem_attr.label;
 
-	if(isNumerico(destino_tipo) && isNumerico(origem_attr.tipo) && destino_tipo != origem_attr.tipo) {
+	if(isNumerico(destino_tipo) && isNumerico(origem_attr.tipo) && tipo_c(destino_tipo) != tipo_c(origem_attr.tipo)) {
 		string temp_cast = gentempcode();
 		addVar(temp_cast, destino_tipo);
-		traducao += "\t" + temp_cast + " = (" + destino_tipo + ") " + origem_attr.label + ";\n";
+		traducao += "\t" + temp_cast + " = (" + tipo_c(destino_tipo) + ") " + origem_attr.label + ";\n";
 		origem = temp_cast;
 	}
 
@@ -2001,6 +2579,7 @@ string gerar_atribuicao_valor(string destino, string destino_tam, string destino
 	}
 	else {
 		traducao += "\t" + destino + " = " + origem + ";\n";
+		traducao += gerar_verificacao_subfaixa(destino, destino_tipo);
 	}
 
 	return traducao;
@@ -2024,56 +2603,138 @@ string gerar_chamada_funcao(string nome, vector<argumento> args, string &tipo, s
 		exit(1);
 	}
 
-	string traducao = "";
+	bool tem_nomeado = false;
+	bool tem_posicional = false;
 
 	for(int i = 0; i < args.size(); i++) {
+		if(args[i].nome != "") {
+			tem_nomeado = true;
+		}
+		else {
+			tem_posicional = true;
+		}
+	}
+
+	if(tem_nomeado && tem_posicional) {
+		yyerror("Chamada da funcao " + nome + " nao pode misturar argumentos por nome e por ordem");
+		exit(1);
+	}
+
+	vector<argumento> args_ordenados;
+
+	if(!tem_nomeado) {
+		args_ordenados = args;
+	}
+	else {
+		args_ordenados.resize(f.parametros.size());
+
+		vector<bool> preenchido;
+
+		for(int i = 0; i < f.parametros.size(); i++) {
+			preenchido.push_back(false);
+		}
+
+		for(int i = 0; i < args.size(); i++) {
+			int indice_parametro = -1;
+
+			for(int j = 0; j < f.parametros.size(); j++) {
+				if(f.parametros[j].nome == args[i].nome) {
+					indice_parametro = j;
+					break;
+				}
+			}
+
+			if(indice_parametro == -1) {
+				yyerror("Funcao " + nome + " nao possui parametro chamado " + args[i].nome);
+				exit(1);
+			}
+
+			if(preenchido[indice_parametro]) {
+				yyerror("Parametro " + args[i].nome + " foi passado mais de uma vez na funcao " + nome);
+				exit(1);
+			}
+
+			args_ordenados[indice_parametro] = args[i];
+			preenchido[indice_parametro] = true;
+		}
+
+		for(int i = 0; i < preenchido.size(); i++) {
+			if(!preenchido[i]) {
+				yyerror("Parametro " + f.parametros[i].nome + " nao foi informado na chamada da funcao " + nome);
+				exit(1);
+			}
+		}
+	}
+
+	string traducao = "";
+	string lista_args = "";
+
+	for(int i = 0; i < args_ordenados.size(); i++) {
 		argumento param = f.parametros[i];
-		argumento arg = args[i];
+		argumento arg = args_ordenados[i];
 
 		if(!atribuicaoCompativel(param.tipo, arg.tipo)) {
 			yyerror("Argumento " + to_string(i + 1) + " da funcao " + nome + " deveria ser " + param.tipo + ", mas recebeu " + arg.tipo);
 			exit(1);
 		}
 
-		atributos attr_arg;
-		attr_arg.label = arg.label;
-		attr_arg.traducao = arg.traducao;
-		attr_arg.tipo = arg.tipo;
-		attr_arg.tam = arg.tam;
+		traducao += arg.traducao;
 
-		traducao += gerar_atribuicao_valor(param.label, param.tam, param.tipo, attr_arg);
+		string valor_arg = arg.label;
+		string valor_tam = arg.tam;
+
+		if(isNumerico(param.tipo) && isNumerico(arg.tipo) && tipo_c(param.tipo) != tipo_c(arg.tipo)) {
+			string temp_cast = gentempcode();
+			addVar(temp_cast, param.tipo);
+
+			traducao += "\t" + temp_cast + " = (" + tipo_c(param.tipo) + ") " + arg.label + ";\n";
+			valor_arg = temp_cast;
+		}
+		else if(param.tipo == "string" && arg.tipo == "char") {
+			string temp_string = gentempcode();
+			addVar(temp_string, "string");
+
+			atributos attr;
+			attr.label = arg.label;
+			attr.traducao = "";
+			attr.tipo = arg.tipo;
+			attr.tam = arg.tam;
+
+			traducao += gerar_atribuicao_valor(temp_string, temp_string + "_tam", "string", attr);
+			valor_arg = temp_string;
+			valor_tam = temp_string + "_tam";
+		}
+
+		traducao += gerar_verificacao_subfaixa(valor_arg, param.tipo);
+
+		if(i > 0) {
+			lista_args += ", ";
+		}
+
+		lista_args += valor_arg;
+
+		if(param.tipo == "string") {
+			lista_args += ", " + valor_tam;
+		}
 	}
-
-	chamada_funcao_qnt++;
-	string retorno = get_label_temp("ret_" + nome);
-	f.retornos.push_back({chamada_funcao_qnt, retorno});
-
-	traducao += "\t" + f.var_chamada + " = " + to_string(chamada_funcao_qnt) + ";\n";
-	traducao += "\tgoto " + f.label + ";\n";
-	traducao += retorno + ":\n";
 
 	tipo = f.tipo_retorno;
 	tam = "";
-	label = "";
 
-	if(tipo != "void") {
-		label = gentempcode();
-		addVar(label, tipo);
+	if(tipo == "void") {
+		label = "";
+		traducao += "\t" + f.nome + "(" + lista_args + ");\n";
+		return traducao;
+	}
 
-		if(tipo == "string") {
-			tam = label + "_tam";
+	label = gentempcode();
+	addVar(label, tipo);
 
-			atributos ret_attr;
-			ret_attr.label = f.var_retorno;
-			ret_attr.traducao = "";
-			ret_attr.tipo = "string";
-			ret_attr.tam = f.var_retorno + "_tam";
+	traducao += "\t" + label + " = " + f.nome + "(" + lista_args + ");\n";
 
-			traducao += gerar_atribuicao_valor(label, tam, "string", ret_attr);
-		}
-		else {
-			traducao += "\t" + label + " = " + f.var_retorno + ";\n";
-		}
+	if(tipo == "string") {
+		tam = label + "_tam";
+		traducao += gerar_tamanho_string(label, tam);
 	}
 
 	return traducao;
@@ -2085,19 +2746,30 @@ string montar_codigo_funcoes() {
 	for(auto &item : funcoes) {
 		funcao &f = item.second;
 
-		codigo += f.label + ":\n";
-		codigo += f.corpo;
-		codigo += f.fim_label + ":\n";
+		codigo += assinatura_funcao(f, false) + ";\n";
+	}
 
-		for(int i = 0; i < f.retornos.size(); i++) {
-			string temp = gentempcode();
-			addVar(temp, "bool");
+	if(!funcoes.empty()) {
+		codigo += "\n";
+	}
 
-			codigo += "\t" + temp + " = " + f.var_chamada + " == " + to_string(f.retornos[i].first) + ";\n";
-			codigo += "\tif (" + temp + ") goto " + f.retornos[i].second + ";\n";
+	for(auto &item : funcoes) {
+		funcao &f = item.second;
+
+		codigo += assinatura_funcao(f, true) + " {\n";
+		codigo += f.variaveis;
+
+		if(f.variaveis != "") {
+			codigo += "\n";
 		}
 
-		codigo += "\tgoto fim_programa;\n";
+		codigo += f.corpo;
+
+		if(f.tipo_retorno == "void") {
+			codigo += "\treturn;\n";
+		}
+
+		codigo += "}\n\n";
 	}
 
 	return codigo;
@@ -2105,9 +2777,8 @@ string montar_codigo_funcoes() {
 
 
 string footer() {
-	string codigo = "\tgoto fim_programa;\n";
-	codigo += "fim_programa:\n";
-	codigo += "\treturn 0;\n}\n";
+	string codigo = "\treturn 0;\n";
+	codigo += "}\n";
 
 	return codigo;
 }
@@ -2132,7 +2803,19 @@ string get_label_temp(string label)
 
 
 bool caseCompativel(string tipo_switch, string tipo_case) {
-    return tipo_switch == tipo_case;
+	if(tipo_switch == tipo_case) {
+		return true;
+	}
+
+	if(isSubfaixa(tipo_switch) && tipo_case == "int") {
+		return true;
+	}
+
+	if(tipo_switch == "int" && isSubfaixa(tipo_case)) {
+		return true;
+	}
+
+	return false;
 }
 
 string gerar_tamanho_string(string ponteiro, string tam) {
@@ -2173,10 +2856,9 @@ int main(int argc, char* argv[])
 		string codigo_funcoes = montar_codigo_funcoes();
 
 		cout << cabecalho();
-		cout << variaveis << endl;
-		cout << "\tgoto inicio_programa;\n";
 		cout << codigo_funcoes;
-		cout << "inicio_programa:\n";
+		cout << "int main(void) {\n";
+		cout << variaveis << endl;
 		cout << codigo_gerado;
 		cout << footer();
 }
