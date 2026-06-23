@@ -2269,34 +2269,65 @@ string cabecalho() {
 					"\treturn t4;\n"
 					"}\n\n"
 
-					"int read_int() {\n"
+										"int read_int() {\n"
 					"\tint t1;\n"
 					"\tchar* t2;\n"
-					"\tint t3;\n\n"
+					"\tchar* t3;\n"
+					"\tlong t4;\n"
+					"\tint t5;\n\n"
 
 					"\tt2 = read_token(&t1);\n"
-					"\tt3 = atoi(t2);\n"
+					"\tt4 = strtol(t2, &t3, 10);\n\n"
+
+					"\tt5 = *t3 != '\\0';\n"
+					"\tif (!t5) goto read_int_ok;\n\n"
+
+					"\tprintf(\"Erro: entrada invalida para int\\n\");\n"
 					"\tfree(t2);\n"
-					"\treturn t3;\n"
+					"\texit(1);\n\n"
+
+					"read_int_ok:\n"
+					"\tfree(t2);\n"
+					"\treturn (int) t4;\n"
 					"}\n\n"
 
 					"float read_float() {\n"
 					"\tint t1;\n"
 					"\tchar* t2;\n"
-					"\tfloat t3;\n\n"
+					"\tchar* t3;\n"
+					"\tdouble t4;\n"
+					"\tint t5;\n\n"
 
 					"\tt2 = read_token(&t1);\n"
-					"\tt3 = atof(t2);\n"
+					"\tt4 = strtod(t2, &t3);\n\n"
+
+					"\tt5 = *t3 != '\\0';\n"
+					"\tif (!t5) goto read_float_ok;\n\n"
+
+					"\tprintf(\"Erro: entrada invalida para float\\n\");\n"
 					"\tfree(t2);\n"
-					"\treturn t3;\n"
+					"\texit(1);\n\n"
+
+					"read_float_ok:\n"
+					"\tfree(t2);\n"
+					"\treturn (float) t4;\n"
 					"}\n\n"
 
 					"char read_char() {\n"
 					"\tint t1;\n"
 					"\tchar* t2;\n"
-					"\tchar t3;\n\n"
+					"\tchar t3;\n"
+					"\tint t4;\n\n"
 
 					"\tt2 = read_token(&t1);\n"
+					"\tt4 = strlen(t2) != 1;\n"
+					"\tif (!t4) goto read_char_ok;\n\n"
+
+					"\tprintf(\"Erro: entrada invalida para char\\n\");\n"
+					"\tfree(t2);\n"
+					"\texit(1);\n\n"
+
+					"read_char_ok:\n"
 					"\tt3 = t2[0];\n"
 					"\tfree(t2);\n"
 					"\treturn t3;\n"
@@ -2307,22 +2338,44 @@ string cabecalho() {
 					"\tchar* t2;\n"
 					"\tint t3;\n"
 					"\tint t4;\n"
-					"\tint t5;\n\n"
+					"\tint t5;\n"
+					"\tint t6;\n"
+					"\tint t7;\n\n"
 
 					"\tt2 = read_token(&t1);\n"
 					"\tt3 = 0;\n\n"
 
 					"\tt4 = strcmp(t2, \"true\") == 0;\n"
-					"\tif (!t4) goto read_bool_testar_um;\n\n"
+					"\tif (!t4) goto read_bool_testar_false;\n\n"
 
 					"\tt3 = 1;\n"
 					"\tgoto read_bool_fim;\n\n"
 
-					"read_bool_testar_um:\n"
-					"\tt5 = strcmp(t2, \"1\") == 0;\n"
-					"\tif (!t5) goto read_bool_fim;\n\n"
+					"read_bool_testar_false:\n"
+					"\tt5 = strcmp(t2, \"false\") == 0;\n"
+					"\tif (!t5) goto read_bool_testar_um;\n\n"
 
-					"\tt3 = 1;\n\n"
+					"\tt3 = 0;\n"
+					"\tgoto read_bool_fim;\n\n"
+
+					"read_bool_testar_um:\n"
+					"\tt6 = strcmp(t2, \"1\") == 0;\n"
+					"\tif (!t6) goto read_bool_testar_zero;\n\n"
+
+					"\tt3 = 1;\n"
+					"\tgoto read_bool_fim;\n\n"
+
+					"read_bool_testar_zero:\n"
+					"\tt7 = strcmp(t2, \"0\") == 0;\n"
+					"\tif (!t7) goto read_bool_erro;\n\n"
+
+					"\tt3 = 0;\n"
+					"\tgoto read_bool_fim;\n\n"
+
+					"read_bool_erro:\n"
+					"\tprintf(\"Erro: entrada invalida para bool\\n\");\n"
+					"\tfree(t2);\n"
+					"\texit(1);\n\n"
 
 					"read_bool_fim:\n"
 					"\tfree(t2);\n"
