@@ -28,6 +28,9 @@ struct variavel
 	bool constante;
 	bool eh_vetor;
 	int tamanho;
+	bool eh_matriz;
+	int linhas;
+	int colunas;
 };
 
 struct argumento
@@ -82,6 +85,11 @@ struct atributos
 	bool eh_vetor;
 	int tamanho;
 	vector<atributos> valores_vetor;
+
+	bool eh_matriz;
+	int linhas;
+	int colunas;
+	vector<vector<atributos>> valores_matriz;
 };
 
 int yylex(void);
@@ -123,6 +131,8 @@ int subfaixaMin(string tipo);
 int subfaixaMax(string tipo);
 string gerar_verificacao_subfaixa(string nome_var, string tipo);
 string gerar_verificacao_indice_vetor(string indice, int limite, string nome_vetor);
+void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_interno);
+string gerar_verificacao_indice_matriz(string indice_lin, int limite_lin, string indice_col, int limite_col, string nome_matriz);
 %}
 
 %token TK_NUM
@@ -884,6 +894,109 @@ VETOR_INIT : '[' LISTA_ELEM_VETOR ']'
 				$$.eh_vetor = true;
 			}
 			;
+TIPO_MATRIZ : TIPO '[' TK_NUM ']' '[' TK_NUM ']'
+			{
+				int linhas = stoi($3.label);
+				int colunas = stoi($6.label);
+
+				if(linhas <= 0) {
+					yyerror("Numero de linhas da matriz deve ser maior que zero");
+					exit(1);
+				}
+
+				if(colunas <= 0) {
+					yyerror("Numero de colunas da matriz deve ser maior que zero");
+					exit(1);
+				}
+
+				if($1.tipo == "string") {
+					yyerror("Matriz de string nao eh suportada");
+					exit(1);
+				}
+
+				$$.tipo = $1.tipo;
+				$$.linhas = linhas;
+				$$.colunas = colunas;
+				$$.eh_matriz = true;
+			}
+			;
+LINHA_MATRIZ : '[' LISTA_ELEM_VETOR ']'
+			{
+				$$.valores_vetor = $2.valores_vetor;
+				$$.tamanho = $2.tamanho;
+			}
+			;
+LISTA_LINHAS_MATRIZ : LINHA_MATRIZ
+			{
+				$$.valores_matriz.clear();
+				$$.valores_matriz.push_back($1.valores_vetor);
+				$$.linhas = 1;
+				$$.colunas = $1.tamanho;
+			}
+			| LISTA_LINHAS_MATRIZ ',' LINHA_MATRIZ
+			{
+				$$.valores_matriz = $1.valores_matriz;
+
+				if($3.tamanho != $1.colunas) {
+					yyerror("Todas as linhas da matriz devem ter o mesmo numero de colunas");
+					exit(1);
+				}
+
+				$$.valores_matriz.push_back($3.valores_vetor);
+				$$.linhas = $1.linhas + 1;
+				$$.colunas = $1.colunas;
+			}
+			;
+MATRIZ_INIT : '[' LISTA_LINHAS_MATRIZ ']'
+			{
+				$$.valores_matriz = $2.valores_matriz;
+				$$.linhas = $2.linhas;
+				$$.colunas = $2.colunas;
+				$$.eh_matriz = true;
+			}
+			;
+REF_MATRIZ : TK_ID '[' E ']' '[' E ']'
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Matriz " + $1.label + " nao foi declarada anteriormente");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+				verificarVarTipada(var, $1.label);
+
+				if(!var->eh_matriz) {
+					yyerror($1.label + " nao eh uma matriz");
+					exit(1);
+				}
+
+				if(!isInteiro($3.tipo)) {
+					yyerror("Indice de linha da matriz deve ser inteiro");
+					exit(1);
+				}
+
+				if(!isInteiro($6.tipo)) {
+					yyerror("Indice de coluna da matriz deve ser inteiro");
+					exit(1);
+				}
+
+				$$.tipo = var->tipo;
+				$$.tam = "";
+				$$.traducao = $3.traducao + $6.traducao;
+				$$.traducao += gerar_verificacao_indice_matriz($3.label, var->linhas, $6.label, var->colunas, $1.label);
+
+				// calcula índice unidimensional: i * colunas + j
+				string idx_linha = gentempcode();
+				string idx_final = gentempcode();
+				addVar(idx_linha, "int");
+				addVar(idx_final, "int");
+				$$.traducao += "\t" + idx_linha + " = " + $3.label + " * " + to_string(var->colunas) + ";\n";
+				$$.traducao += "\t" + idx_final + " = " + idx_linha + " + " + $6.label + ";\n";
+				$$.label = var->nome_interno + "[" + idx_final + "]";
+			}
+			;
 REF_VETOR : TK_ID '[' E ']'
 			{
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
@@ -982,6 +1095,26 @@ CIN			: TK_CIN TK_RR TK_ID
 				$$.traducao = traducao;
 			}
 			| TK_CIN TK_RR REF_VETOR
+			{
+				string traducao = $3.traducao;
+
+				if($3.tipo == "int" || isSubfaixa($3.tipo)) {
+					traducao += "\t" + $3.label + " = read_int();\n";
+					traducao += gerar_verificacao_subfaixa($3.label, $3.tipo);
+				}
+				else if($3.tipo == "float") {
+					traducao += "\t" + $3.label + " = read_float();\n";
+				}
+				else if($3.tipo == "char") {
+					traducao += "\t" + $3.label + " = read_char();\n";
+				}
+				else if($3.tipo == "bool") {
+					traducao += "\t" + $3.label + " = read_bool();\n";
+				}
+
+				$$.traducao = traducao;
+			}
+			| TK_CIN TK_RR REF_MATRIZ
 			{
 				string traducao = $3.traducao;
 
@@ -1490,6 +1623,16 @@ E 			: E TK_POW E
 				$$.traducao = $1.traducao;
 				$$.traducao += "\t" + $$.label + " = " + $1.label + ";\n";
 			}
+			| REF_MATRIZ
+			{
+				$$.label = gentempcode();
+				addVar($$.label, $1.tipo);
+
+				$$.tipo = $1.tipo;
+				$$.tam = "";
+				$$.traducao = $1.traducao;
+				$$.traducao += "\t" + $$.label + " = " + $1.label + ";\n";
+			}
 			| TK_ID
 			{
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
@@ -1602,6 +1745,62 @@ D			: TK_LET TK_ID ':' TIPO
 
 					string destino = var + "[" + to_string(i) + "]";
 					traducao += gerar_atribuicao_valor(destino, "", $4.tipo, valor);
+				}
+
+				$$.traducao = traducao;
+			}
+			| TK_LET TK_ID ':' TIPO_MATRIZ
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addMatriz($2.label, $4.tipo, $4.linhas, $4.colunas, var);
+
+				$$.traducao = "";
+			}
+			| TK_LET TK_ID ':' TIPO_MATRIZ '=' MATRIZ_INIT
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				if($4.linhas != $6.linhas) {
+					yyerror("Numero de linhas incompativel na inicializacao da matriz " + $2.label);
+					exit(1);
+				}
+
+				if($4.colunas != $6.colunas) {
+					yyerror("Numero de colunas incompativel na inicializacao da matriz " + $2.label);
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addMatriz($2.label, $4.tipo, $4.linhas, $4.colunas, var);
+
+				string traducao = "";
+
+				for(int i = 0; i < $6.valores_matriz.size(); i++) {
+					for(int j = 0; j < $6.valores_matriz[i].size(); j++) {
+						atributos valor = $6.valores_matriz[i][j];
+
+						verificarExpressaoComValor(valor, "na inicializacao da matriz " + $2.label);
+
+						if(!atribuicaoCompativel($4.tipo, valor.tipo)) {
+							yyerror("Tipo incompativel na inicializacao da matriz " + $2.label + " na posicao [" + to_string(i) + "][" + to_string(j) + "]");
+							exit(1);
+						}
+
+						// índice unidimensional: i * colunas + j
+						int idx = i * $4.colunas + j;
+						string destino = var + "[" + to_string(idx) + "]";
+						traducao += gerar_atribuicao_valor(destino, "", $4.tipo, valor);
+					}
 				}
 
 				$$.traducao = traducao;
@@ -1866,6 +2065,18 @@ ATRIB		: TK_ID '=' E
 
 				if(!atribuicaoCompativel($1.tipo, $3.tipo)) {
 					yyerror("Tipos incompativeis na atribuicao do vetor: " + $1.tipo + " e " + $3.tipo);
+					exit(1);
+				}
+
+				$$.traducao = $1.traducao;
+				$$.traducao += gerar_atribuicao_valor($1.label, "", $1.tipo, $3);
+			}
+			| REF_MATRIZ '=' E
+			{
+				verificarExpressaoComValor($3, "na atribuicao de matriz");
+
+				if(!atribuicaoCompativel($1.tipo, $3.tipo)) {
+					yyerror("Tipos incompativeis na atribuicao da matriz: " + $1.tipo + " e " + $3.tipo);
 					exit(1);
 				}
 
@@ -2522,6 +2733,9 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		v.constante = false;
 		v.eh_vetor = false;
 		v.tamanho = 0;
+		v.eh_matriz = false;
+		v.linhas = 0;
+		v.colunas = 0;
 
 		tabelas.back()[nome] = v;
 
@@ -2557,6 +2771,9 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 	var.constante = false;
 	var.eh_vetor = false;
 	var.tamanho = 0;
+	var.eh_matriz = false;
+	var.linhas = 0;
+	var.colunas = 0;
 
 	string nome_temp = get_chave_temp(); 
 
@@ -2600,15 +2817,86 @@ void addVetor(string nome, string tipo, int tamanho, string nome_interno) {
 	v.constante = false;
 	v.eh_vetor = true;
 	v.tamanho = tamanho;
+	v.eh_matriz = false;
+	v.linhas = 0;
+	v.colunas = 0;
 
 	tabelas.back()[nome] = v;
 
 	addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(tamanho) + "];\n");
 }
 
+void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_interno) {
+	if(exists_var_escopo_atual(nome)) {
+		yyerror("Ja existe uma variavel com esse nome");
+		exit(1);
+	}
+
+	if(tipo == "string") {
+		yyerror("Matriz de string nao eh suportada");
+		exit(1);
+	}
+
+	variavel v;
+	v.nome_interno = nome_interno;
+	v.tipo = tipo;
+	v.valor = "";
+	v.tam = "";
+	v.constante = false;
+	v.eh_vetor = false;
+	v.tamanho = 0;
+	v.eh_matriz = true;
+	v.linhas = linhas;
+	v.colunas = colunas;
+
+	tabelas.back()[nome] = v;
+
+	int total = linhas * colunas;
+	addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(total) + "];\n");
+}
+
+string gerar_verificacao_indice_matriz(string indice_lin, int limite_lin, string indice_col, int limite_col, string nome_matriz) {
+	string menor_lin = gentempcode();
+	string maior_lin = gentempcode();
+	string erro_lin  = gentempcode();
+	string menor_col = gentempcode();
+	string maior_col = gentempcode();
+	string erro_col  = gentempcode();
+	string erro      = gentempcode();
+	string fim = get_label_temp("fim_indice_matriz");
+
+	addVar(menor_lin, "bool");
+	addVar(maior_lin, "bool");
+	addVar(erro_lin,  "bool");
+	addVar(menor_col, "bool");
+	addVar(maior_col, "bool");
+	addVar(erro_col,  "bool");
+	addVar(erro,      "bool");
+
+	string traducao = "";
+
+	traducao += "\t" + menor_lin + " = " + indice_lin + " < 0;\n";
+	traducao += "\t" + maior_lin + " = " + indice_lin + " >= " + to_string(limite_lin) + ";\n";
+	traducao += "\t" + erro_lin  + " = " + menor_lin  + " || " + maior_lin + ";\n";
+	traducao += "\t" + menor_col + " = " + indice_col + " < 0;\n";
+	traducao += "\t" + maior_col + " = " + indice_col + " >= " + to_string(limite_col) + ";\n";
+	traducao += "\t" + erro_col  + " = " + menor_col  + " || " + maior_col + ";\n";
+	traducao += "\t" + erro      + " = " + erro_lin   + " || " + erro_col + ";\n";
+	traducao += "\tif (!" + erro + ") goto " + fim + ";\n";
+	traducao += "\tprintf(\"Erro: indice fora dos limites da matriz " + nome_matriz + "\\n\");\n";
+	traducao += "\texit(1);\n";
+	traducao += fim + ":\n";
+
+	return traducao;
+}
+
 void verificarNaoVetor(variavel* var, string nome) {
 	if(var->eh_vetor) {
 		yyerror("Vetor " + nome + " precisa ser acessado com indice");
+		exit(1);
+	}
+	if(var->eh_matriz) {
+		yyerror("Matriz " + nome + " precisa ser acessada com dois indices");
 		exit(1);
 	}
 }
@@ -2818,6 +3106,9 @@ void addParametroFuncao(string nome, string tipo) {
 	v.constante = false;
 	v.eh_vetor = false;
 	v.tamanho = 0;
+	v.eh_matriz = false;
+	v.linhas = 0;
+	v.colunas = 0;
 
 	if(tipo == "string") {
 		v.tam = interno + "_tam";
