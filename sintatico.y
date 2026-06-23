@@ -26,6 +26,8 @@ struct variavel
 	string valor;
 	string tam;
 	bool constante;
+	bool eh_vetor;
+	int tamanho;
 };
 
 struct argumento
@@ -76,6 +78,10 @@ struct atributos
     bool tem_default;
 
 	vector<argumento> args;
+	
+	bool eh_vetor;
+	int tamanho;
+	vector<atributos> valores_vetor;
 };
 
 int yylex(void);
@@ -84,6 +90,7 @@ string gentempcode();
 string get_chave_temp();
 string get_label_temp(string label);
 void addVar(string nome, string tipo, bool interno = true, string nome_interno = "");
+void addVetor(string nome, string tipo, int tamanho, string nome_interno);
 tuple<bool, bool, variavel*> existsVar(string nome, string tipo);
 bool atribuicaoCompativel(string t1, string t2);
 bool isNumerico(string t);
@@ -104,6 +111,7 @@ string montar_codigo_funcoes();
 void tiparVarDinamica(variavel* var, string tipo);
 void verificarVarTipada(variavel* var, string nome);
 void verificarNaoConstante(variavel* var, string nome);
+void verificarNaoVetor(variavel* var, string nome);
 void verificarExpressaoComValor(atributos attr, string contexto);
 string tipo_c(string tipo);
 void addDeclaracao(string declaracao);
@@ -114,7 +122,7 @@ bool isInteiro(string tipo);
 int subfaixaMin(string tipo);
 int subfaixaMax(string tipo);
 string gerar_verificacao_subfaixa(string nome_var, string tipo);
-
+string gerar_verificacao_indice_vetor(string indice, int limite, string nome_vetor);
 %}
 
 %token TK_NUM
@@ -836,6 +844,74 @@ TIPO		: TK_INT
 				$$.tipo = "subfaixa:" + $1.label + ":" + $3.label;
 			}
 
+						;
+TIPO_VETOR : TIPO '[' TK_NUM ']'
+			{
+				int tamanho = stoi($3.label);
+
+				if(tamanho <= 0) {
+					yyerror("Tamanho do vetor deve ser maior que zero");
+					exit(1);
+				}
+
+				if($1.tipo == "string") {
+					yyerror("Vetor de string ainda nao eh suportado");
+					exit(1);
+				}
+
+				$$.tipo = $1.tipo;
+				$$.tamanho = tamanho;
+				$$.eh_vetor = true;
+			}
+			;
+LISTA_ELEM_VETOR : E
+			{
+				$$.valores_vetor.clear();
+				$$.valores_vetor.push_back($1);
+				$$.tamanho = 1;
+			}
+			| LISTA_ELEM_VETOR ',' E
+			{
+				$$.valores_vetor = $1.valores_vetor;
+				$$.valores_vetor.push_back($3);
+				$$.tamanho = $$.valores_vetor.size();
+			}
+			;
+VETOR_INIT : '[' LISTA_ELEM_VETOR ']'
+			{
+				$$.valores_vetor = $2.valores_vetor;
+				$$.tamanho = $2.tamanho;
+				$$.eh_vetor = true;
+			}
+			;
+REF_VETOR : TK_ID '[' E ']'
+			{
+				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
+
+				if(!get<0>(exists)) {
+					yyerror("Vetor " + $1.label + " nao foi declarado anteriormente");
+					exit(1);
+				}
+
+				variavel* var = get<2>(exists);
+				verificarVarTipada(var, $1.label);
+
+				if(!var->eh_vetor) {
+					yyerror($1.label + " nao eh um vetor");
+					exit(1);
+				}
+
+				if(!isInteiro($3.tipo)) {
+					yyerror("Indice do vetor deve ser inteiro");
+					exit(1);
+				}
+
+				$$.tipo = var->tipo;
+				$$.tam = "";
+				$$.label = var->nome_interno + "[" + $3.label + "]";
+				$$.traducao = $3.traducao;
+				$$.traducao += gerar_verificacao_indice_vetor($3.label, var->tamanho, $1.label);
+			}
 			;
 VALOR		: TK_TRUE
 			{
@@ -881,6 +957,7 @@ CIN			: TK_CIN TK_RR TK_ID
 
 				verificarVarTipada(var, $3.label);
 				verificarNaoConstante(var, $3.label);
+				verificarNaoVetor(var, $3.label);
 
 				string traducao = "";
 
@@ -904,27 +981,33 @@ CIN			: TK_CIN TK_RR TK_ID
 
 				$$.traducao = traducao;
 			}
-			;
-COUT		: TK_COUT TK_LL TK_ID
+			| TK_CIN TK_RR REF_VETOR
 			{
-				tuple<bool, bool, variavel*> exists = existsVar($3.label, "any");
+				string traducao = $3.traducao;
 
-				if(!get<0>(exists)) {
-					yyerror("Variavel " + $3.label + " nao foi declarada anteriormente");
-					exit(1);
+				if($3.tipo == "int" || isSubfaixa($3.tipo)) {
+					traducao += "\t" + $3.label + " = read_int();\n";
+					traducao += gerar_verificacao_subfaixa($3.label, $3.tipo);
+				}
+				else if($3.tipo == "float") {
+					traducao += "\t" + $3.label + " = read_float();\n";
+				}
+				else if($3.tipo == "char") {
+					traducao += "\t" + $3.label + " = read_char();\n";
+				}
+				else if($3.tipo == "bool") {
+					traducao += "\t" + $3.label + " = read_bool();\n";
 				}
 
-				variavel* var = get<2>(exists);
-
-				verificarVarTipada(var, $3.label);
-
-				string traducao = "\tcout << " + var->nome_interno + ";\n";
-				$$.traducao = traducao;		
+				$$.traducao = traducao;
 			}
-			| TK_COUT TK_LL TK_STRING_LIT
+			;
+COUT		: TK_COUT TK_LL E
 			{
-				string traducao = "\tcout << " + $3.label + ";\n";
-				$$.traducao = traducao;	
+				verificarExpressaoComValor($3, "no cout");
+
+				$$.traducao = $3.traducao;
+				$$.traducao += "\tcout << " + $3.label + ";\n";
 			}
 			;
 E 			: E TK_POW E
@@ -1397,6 +1480,16 @@ E 			: E TK_POW E
 				$$.tipo = "bool";
 				$$.traducao = $2.traducao + "\t" + $$.label + " = !" + $2.label + ";\n";
 			}
+			| REF_VETOR
+			{
+				$$.label = gentempcode();
+				addVar($$.label, $1.tipo);
+
+				$$.tipo = $1.tipo;
+				$$.tam = "";
+				$$.traducao = $1.traducao;
+				$$.traducao += "\t" + $$.label + " = " + $1.label + ";\n";
+			}
 			| TK_ID
 			{
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
@@ -1407,6 +1500,7 @@ E 			: E TK_POW E
 				variavel* var = get<2>(exists);
 
 				verificarVarTipada(var, $1.label);
+				verificarNaoVetor(var, $1.label);
 
 				$$.label = var->nome_interno;
 				$$.tipo = var->tipo;
@@ -1464,6 +1558,53 @@ D			: TK_LET TK_ID ':' TIPO
 					$$.traducao += "\t" + var + " = NULL;\n";
 					$$.traducao += "\t" + var + "_tam = 0;\n";
 				}
+			}
+			| TK_LET TK_ID ':' TIPO_VETOR
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addVetor($2.label, $4.tipo, $4.tamanho, var);
+
+				$$.traducao = "";
+			}
+			| TK_LET TK_ID ':' TIPO_VETOR '=' VETOR_INIT
+			{
+				bool exists = exists_var_escopo_atual($2.label);
+				if(exists) {
+					yyerror("Variavel " + $2.label + " já foi declarada anteriormente");
+					exit(1);
+				}
+
+				if($4.tamanho != $6.tamanho) {
+					yyerror("Inicializacao do vetor " + $2.label + " tem tamanho incompativel");
+					exit(1);
+				}
+
+				string var = gentempcode();
+				addVetor($2.label, $4.tipo, $4.tamanho, var);
+
+				string traducao = "";
+
+				for(int i = 0; i < $6.valores_vetor.size(); i++) {
+					atributos valor = $6.valores_vetor[i];
+
+					verificarExpressaoComValor(valor, "na inicializacao do vetor " + $2.label);
+
+					if(!atribuicaoCompativel($4.tipo, valor.tipo)) {
+						yyerror("Tipo incompativel na inicializacao do vetor " + $2.label);
+						exit(1);
+					}
+
+					string destino = var + "[" + to_string(i) + "]";
+					traducao += gerar_atribuicao_valor(destino, "", $4.tipo, valor);
+				}
+
+				$$.traducao = traducao;
 			}
 			| ATRIB
 			{
@@ -1665,6 +1806,7 @@ ATRIB		: TK_ID '=' E
 
 				verificarExpressaoComValor($3, "na atribuicao de " + $1.label);
 				verificarNaoConstante(var, $1.label);
+				verificarNaoVetor(var, $1.label);
 
 				bool primeira_atribuicao_var = var->tipo == "var";
 
@@ -1718,6 +1860,18 @@ ATRIB		: TK_ID '=' E
 					$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
 				}
 			}
+			| REF_VETOR '=' E
+			{
+				verificarExpressaoComValor($3, "na atribuicao de vetor");
+
+				if(!atribuicaoCompativel($1.tipo, $3.tipo)) {
+					yyerror("Tipos incompativeis na atribuicao do vetor: " + $1.tipo + " e " + $3.tipo);
+					exit(1);
+				}
+
+				$$.traducao = $1.traducao;
+				$$.traducao += gerar_atribuicao_valor($1.label, "", $1.tipo, $3);
+			}
 			| TK_ID TK_ATRIB_COMP E
 			{
 				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
@@ -1730,6 +1884,7 @@ ATRIB		: TK_ID '=' E
 				variavel* var = get<2>(exists);
 				verificarExpressaoComValor($3, "no operador composto de " + $1.label);
 				verificarNaoConstante(var, $1.label);
+				verificarNaoVetor(var, $1.label);
 				string op = $2.label;
 
 				if(op == "+" && var->tipo == "string") {
@@ -1864,6 +2019,7 @@ ATRIB		: TK_ID '=' E
 				}
 
 				verificarNaoConstante(var, $1.label);
+				verificarNaoVetor(var, $1.label);
 
 				if(var->tipo == "float") {
 					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
@@ -1886,6 +2042,7 @@ ATRIB		: TK_ID '=' E
 				variavel* var = get<2>(exists);
 
 				verificarNaoConstante(var, $1.label);
+				verificarNaoVetor(var, $1.label);
 
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador --");
@@ -1913,6 +2070,7 @@ ATRIB		: TK_ID '=' E
 				variavel* var = get<2>(exists);
 
 				verificarNaoConstante(var, $2.label);
+				verificarNaoVetor(var, $1.label);
 
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador ++");
@@ -1944,6 +2102,7 @@ ATRIB		: TK_ID '=' E
 				variavel* var = get<2>(exists);
 
 				verificarNaoConstante(var, $2.label);
+				verificarNaoVetor(var, $2.label);
 
 				if(!isNumerico(var->tipo)) {
 					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador --");
@@ -2308,26 +2467,32 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		v.valor = "";
 		v.tam = "";
 		v.constante = false;
+		v.eh_vetor = false;
+		v.tamanho = 0;
+
 		tabelas.back()[nome] = v;
 
 		if(tipo == "var") {
 			return;
 		}
-		// tabela[nome] = v;
+
 		if(tipo == "bool") {
 			addDeclaracao("\tint " + nome_interno + ";\n");
 			return;
 		}
+
 		if(tipo == "string") {
 			v.tam = nome_interno + "_tam";
 			v.valor = "";
+
 			addDeclaracao("\tchar* " + nome_interno + ";\n");
 			addDeclaracao("\tint " + nome_interno + "_tam;\n");
+
 			tabelas.back()[nome] = v;
 			return;
 		}
-		addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + ";\n");
 
+		addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + ";\n");
 		return;
 	}
 	
@@ -2337,23 +2502,62 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 	var.valor = "";
 	var.tam = "";
 	var.constante = false;
+	var.eh_vetor = false;
+	var.tamanho = 0;
 
 	string nome_temp = get_chave_temp(); 
 
 	tabelas.back()[nome_temp] = var;
+
 	if(tipo == "bool") {
 		addDeclaracao("\tint " + nome + ";\n");
 		return;
 	}
+
 	if(tipo == "string") {
-			var.tam = nome + "_tam";
-			var.valor = "";
-			addDeclaracao("\tchar* " + nome + ";\n");
-			addDeclaracao("\tint " + nome + "_tam;\n");
-			tabelas.back()[nome_temp] = var;
-			return;
-		}
+		var.tam = nome + "_tam";
+		var.valor = "";
+
+		addDeclaracao("\tchar* " + nome + ";\n");
+		addDeclaracao("\tint " + nome + "_tam;\n");
+
+		tabelas.back()[nome_temp] = var;
+		return;
+	}
+
 	addDeclaracao("\t" + tipo_c(tipo) + " " + nome + ";\n");
+}
+
+void addVetor(string nome, string tipo, int tamanho, string nome_interno) {
+	if(exists_var_escopo_atual(nome)) {
+		yyerror("Ja existe uma variavel com esse nome");
+		exit(1);
+	}
+
+	if(tipo == "string") {
+		yyerror("Vetor de string ainda nao eh suportado");
+		exit(1);
+	}
+
+	variavel v;
+	v.nome_interno = nome_interno;
+	v.tipo = tipo;
+	v.valor = "";
+	v.tam = "";
+	v.constante = false;
+	v.eh_vetor = true;
+	v.tamanho = tamanho;
+
+	tabelas.back()[nome] = v;
+
+	addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(tamanho) + "];\n");
+}
+
+void verificarNaoVetor(variavel* var, string nome) {
+	if(var->eh_vetor) {
+		yyerror("Vetor " + nome + " precisa ser acessado com indice");
+		exit(1);
+	}
 }
 
 void verificarNaoConstante(variavel* var, string nome) {
@@ -2416,6 +2620,29 @@ string gerar_verificacao_subfaixa(string nome_var, string tipo) {
 	traducao += "\t" + erro + " = " + menor + " || " + maior + ";\n";
 	traducao += "\tif (!" + erro + ") goto " + fim + ";\n";
 	traducao += "\tprintf(\"Erro: valor fora da subfaixa [" + to_string(min) + ".." + to_string(max) + "]\\n\");\n";
+	traducao += "\texit(1);\n";
+	traducao += fim + ":\n";
+
+	return traducao;
+}
+
+string gerar_verificacao_indice_vetor(string indice, int limite, string nome_vetor) {
+	string menor = gentempcode();
+	string maior = gentempcode();
+	string erro = gentempcode();
+	string fim = get_label_temp("fim_indice_vetor");
+
+	addVar(menor, "bool");
+	addVar(maior, "bool");
+	addVar(erro, "bool");
+
+	string traducao = "";
+
+	traducao += "\t" + menor + " = " + indice + " < 0;\n";
+	traducao += "\t" + maior + " = " + indice + " >= " + to_string(limite) + ";\n";
+	traducao += "\t" + erro + " = " + menor + " || " + maior + ";\n";
+	traducao += "\tif (!" + erro + ") goto " + fim + ";\n";
+	traducao += "\tprintf(\"Erro: indice fora dos limites do vetor " + nome_vetor + "\\n\");\n";
 	traducao += "\texit(1);\n";
 	traducao += fim + ":\n";
 
@@ -2536,6 +2763,8 @@ void addParametroFuncao(string nome, string tipo) {
 	v.valor = "";
 	v.tam = "";
 	v.constante = false;
+	v.eh_vetor = false;
+	v.tamanho = 0;
 
 	if(tipo == "string") {
 		v.tam = interno + "_tam";

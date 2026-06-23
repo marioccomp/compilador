@@ -57,6 +57,8 @@ NUM {DIGITO}+
 "true"     { yylval.label = "1"; return TK_TRUE;}
 "("        { return '('; }
 ")"        { return ')'; }
+"["        { return '['; }
+"]"        { return ']'; }
 "{"         {return '{';}
 "}"         {return '}';}
 ","         {return ',';}
