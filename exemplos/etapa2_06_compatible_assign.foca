@@ -1,6 +1,6 @@
-int i = 10;
-float f = 5.5;
+let i : int = 10;
+let f : float = 5.5;
 i = f;
 f = i;
-string s = "abc";
+let s : string = "abc";
 s = 'x';

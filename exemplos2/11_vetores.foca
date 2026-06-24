@@ -1,0 +1,36 @@
+// =============================================
+// Vetores (Arrays 1D)
+// Declaração, inicialização, acesso indexado
+// e verificação de limites em runtime.
+// =============================================
+
+// Vetor com inicialização
+let notas : float[5] = [8.5, 9.0, 7.5, 10.0, 6.5]
+
+// Leitura de elementos
+cout << notas[0]
+cout << notas[4]
+
+// Modificação
+notas[2] = 8.0
+
+// Cálculo da média
+let soma : float = 0.0
+for (let i : int = 0; i < 5; i++) {
+    soma += notas[i]
+}
+let media : float = soma / 5.0
+cout << media
+
+// Vetor de inteiros sem inicialização
+let fibonacci : int[7]
+fibonacci[0] = 0
+fibonacci[1] = 1
+for (let i : int = 2; i < 7; i++) {
+    fibonacci[i] = fibonacci[i - 1] + fibonacci[i - 2]
+}
+
+// Imprime sequência de Fibonacci
+for (let i : int = 0; i < 7; i++) {
+    cout << fibonacci[i]
+}

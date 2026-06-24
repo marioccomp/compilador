@@ -1,0 +1,36 @@
+// =============================================
+// Extra: Inferência de Tipo de Retorno
+// O tipo de retorno da função é inferido
+// automaticamente pelo primeiro return.
+// =============================================
+
+// Sem tipo de retorno declarado → inferido como int
+func quadrado(x : int) {
+    return x * x
+}
+
+let r1 = quadrado(5)
+cout << r1
+
+// Sem tipo de retorno declarado → inferido como float
+func metade(x : float) {
+    return x / 2.0
+}
+
+let r2 = metade(10.0)
+cout << r2
+
+// Sem tipo de retorno declarado → inferido como string
+func saudacao(nome : string) {
+    return "Ola, " + nome
+}
+
+let r3 = saudacao("FOCA")
+cout << r3
+
+// Sem tipo de retorno E sem return → automaticamente void (procedimento)
+func imprimir_linha() {
+    cout << "--------"
+}
+
+imprimir_linha()

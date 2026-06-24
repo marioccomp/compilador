@@ -1,11 +1,11 @@
-int outer = 1;
-for (int i = 0; i < 3; i++) {
-    int inner = 10;
+let outer : int = 1;
+for (let i : int = 0; i < 3; i++) {
+    let inner : int = 10;
     while (inner > 0) {
         inner--;
         if (inner == 5) {
             {
-                int shadowed = 100;
+                let shadowed : int = 100;
                 cout << shadowed;
             }
             continue;

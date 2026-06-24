@@ -1,0 +1,36 @@
+// =============================================
+// Conversão de Tipos
+// Conversão implícita (automática) e
+// explícita (cast) entre tipos compatíveis.
+// =============================================
+
+// --- Conversão Implícita ---
+// int → float em expressões mistas
+let i : int = 10
+let f : float = 3.5
+let resultado = i + f
+cout << resultado
+
+// int → float em atribuição
+let g : float = i
+cout << g
+
+// char → string em atribuição
+let s : string = 'x'
+cout << s
+
+// --- Conversão Explícita (Cast) ---
+// float → int (truncamento)
+let pi : float = 3.14
+let inteiro = (int) pi
+cout << inteiro
+
+// int → float
+let n : int = 42
+let decimal = (float) n
+cout << decimal
+
+// Cast para subfaixa
+let valor : int = 7
+let nota = (0..10) valor
+cout << nota

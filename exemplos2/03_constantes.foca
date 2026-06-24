@@ -1,0 +1,29 @@
+// =============================================
+// Extra: Constantes com const
+// Variáveis imutáveis que não podem ser
+// reatribuídas após a declaração.
+// =============================================
+
+// Constante com inferência de tipo
+const PI = 3.14159
+cout << PI
+
+// Constante com tipo explícito
+const MAX : int = 100
+cout << MAX
+
+// Constante do tipo string
+const NOME = "Compilador FOCA"
+cout << NOME
+
+// Constante bool
+const MODO_DEBUG = false
+cout << MODO_DEBUG
+
+// Usando constantes em expressões
+let raio : float = 5.0
+let area = PI * raio * raio
+cout << area
+
+let metade = MAX / 2
+cout << metade

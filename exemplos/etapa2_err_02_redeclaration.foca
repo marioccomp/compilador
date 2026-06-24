@@ -1,2 +1,2 @@
-int a = 1;
-int a = 2;
+let a : int = 1;
+let a : int = 2;

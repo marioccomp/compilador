@@ -1,0 +1,33 @@
+// =============================================
+// Extra: Variáveis Globais + Funções
+// Variáveis globais são acessíveis dentro de
+// funções. Variáveis locais do main NÃO são.
+// =============================================
+
+// Variável global
+global let total : int = 0
+
+// Função que acessa e modifica a variável global
+func adicionar(valor : int) {
+    total = total + valor
+}
+
+// Função que lê a variável global
+func obter_total() : int {
+    return total
+}
+
+// Procedimento que imprime o total
+func mostrar_total() {
+    cout << total
+}
+
+// Programa principal
+adicionar(10)
+adicionar(20)
+adicionar(30)
+
+mostrar_total()
+
+let t = obter_total()
+cout << t

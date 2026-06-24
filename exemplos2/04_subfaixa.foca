@@ -1,0 +1,33 @@
+// =============================================
+// Extra: Tipos Subfaixa
+// Restringe um inteiro a um intervalo [min..max]
+// com validação automática em runtime.
+// =============================================
+
+// Nota de 0 a 10
+let nota : 0..10 = 8
+cout << nota
+
+// Mês de 1 a 12
+let mes : 1..12 = 6
+cout << mes
+
+// Operações com subfaixa (resultado é int)
+let dobro : int = nota * 2
+cout << dobro
+
+// Subfaixa é compatível com int
+let x : int = nota
+cout << x
+
+// Cast explícito para subfaixa
+let valor : int = 5
+let nota2 : 0..10 = (0..10) valor
+cout << nota2
+
+// Incremento com verificação automática
+let contador : 0..5 = 0
+contador++
+contador++
+contador++
+cout << contador

@@ -1,9 +1,9 @@
-bool b = true;
+let b : bool = true;
 if (b) {
-    int x = 1;
+    let x : int = 1;
 }
 if (!b) {
-    int y = 2;
+    let y : int = 2;
 } else {
-    int y = 3;
+    let y : int = 3;
 }

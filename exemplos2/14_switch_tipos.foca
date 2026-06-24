@@ -1,0 +1,48 @@
+// =============================================
+// Switch com diferentes tipos
+// Switch aceita int, char e string como
+// expressão de controle.
+// =============================================
+
+// Switch com int
+let dia : int = 3
+switch (dia) {
+    case 1:
+        cout << "Segunda"
+    case 2:
+        cout << "Terca"
+    case 3:
+        cout << "Quarta"
+    case 4:
+        cout << "Quinta"
+    case 5:
+        cout << "Sexta"
+    default:
+        cout << "Fim de semana"
+}
+
+// Switch com char
+let opcao : char = 'B'
+switch (opcao) {
+    case 'A':
+        cout << "Opcao A"
+    case 'B':
+        cout << "Opcao B"
+    case 'C':
+        cout << "Opcao C"
+    default:
+        cout << "Opcao invalida"
+}
+
+// Switch com string
+let comando : string = "sair"
+switch (comando) {
+    case "ajuda":
+        cout << "Mostrando ajuda"
+    case "sair":
+        cout << "Saindo..."
+    case "limpar":
+        cout << "Tela limpa"
+    default:
+        cout << "Comando desconhecido"
+}

@@ -1,0 +1,39 @@
+// =============================================
+// Extra: Matrizes Bidimensionais (2D)
+// Declaração, inicialização e acesso com
+// verificação automática de limites.
+// =============================================
+
+// Declaração com inicialização
+let identidade : int[3][3] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+
+// Leitura de elementos
+cout << identidade[0][0]
+cout << identidade[1][1]
+cout << identidade[2][2]
+cout << identidade[0][1]
+
+// Declaração sem inicialização + preenchimento manual
+let matriz : int[2][3]
+matriz[0][0] = 1
+matriz[0][1] = 2
+matriz[0][2] = 3
+matriz[1][0] = 4
+matriz[1][1] = 5
+matriz[1][2] = 6
+
+// Percorrendo a matriz com laços aninhados
+for (let i : int = 0; i < 2; i++) {
+    for (let j : int = 0; j < 3; j++) {
+        cout << matriz[i][j]
+    }
+}
+
+// Soma de todos os elementos
+let soma : int = 0
+for (let i : int = 0; i < 2; i++) {
+    for (let j : int = 0; j < 3; j++) {
+        soma = soma + matriz[i][j]
+    }
+}
+cout << soma

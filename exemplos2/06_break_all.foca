@@ -1,0 +1,41 @@
+// =============================================
+// Extra: Break All / Continue All
+// Permite sair de TODOS os laços aninhados
+// de uma vez, sem precisar de flags manuais.
+// =============================================
+
+// --- Break All ---
+// Busca um par (i, j) onde i * j == 12
+let resultado_i : int = 0
+let resultado_j : int = 0
+
+for (let i : int = 1; i < 10; i++) {
+    for (let j : int = 1; j < 10; j++) {
+        if (i * j == 12) {
+            resultado_i = i
+            resultado_j = j
+            break all
+        }
+    }
+}
+
+// Deve imprimir 2 e 6 (primeiro par encontrado)
+cout << resultado_i
+cout << resultado_j
+
+// --- Continue All ---
+// Pula direto para a próxima iteração do laço mais externo
+let contador : int = 0
+
+for (let i : int = 0; i < 5; i++) {
+    for (let j : int = 0; j < 5; j++) {
+        if (j == 1) {
+            continue all
+        }
+        contador++
+    }
+}
+
+// Cada iteração do for externo executa j=0 e depois continue all em j=1
+// Então contador = 5 (uma vez por iteração do for externo)
+cout << contador

@@ -1,4 +1,4 @@
-int g = 10;
+let g : int = 10;
 {
     cout << g;
 }

@@ -1,0 +1,62 @@
+// =============================================
+//  Exemplo Completo: Calculadora de Notas
+//  Demonstra múltiplas funcionalidades extras
+//  do compilador FOCA em um programa real.
+// =============================================
+
+// --- Variável global ---
+global let total_alunos : int = 0
+
+// --- Função com inferência de retorno ---
+func calcular_media(notas : int[3]) {
+    let soma : int = 0
+    for (let i : int = 0; i < 3; i++) {
+        soma += notas[i]
+    }
+    return (float) soma / 3.0
+}
+
+// --- Procedimento (void automático) ---
+func separador() {
+    cout << "===================="
+}
+
+// --- Função com parâmetros nomeáveis ---
+func classificar(media : float, limite : float) : string {
+    if (media >= limite) {
+        return "Aprovado"
+    } else {
+        return "Reprovado"
+    }
+}
+
+// --- Programa principal ---
+separador()
+
+// Constante
+const LIMITE_APROVACAO : float = 6.0
+
+// Notas do aluno (vetor)
+let notas : int[3] = [7, 8, 9]
+total_alunos++
+
+// Cálculo usando função
+let media = calcular_media(notas)
+cout << media
+
+// Classificação com passagem por nome
+let status = classificar(limite = LIMITE_APROVACAO, media = media)
+cout << status
+
+// Operações matemáticas extras
+let maior_nota = max(max(notas[0], notas[1]), notas[2])
+let menor_nota = min(min(notas[0], notas[1]), notas[2])
+cout << maior_nota
+cout << menor_nota
+
+// Subfaixa para nota final (0 a 10)
+let nota_final : 0..10 = (int) media
+cout << nota_final
+
+separador()
+cout << total_alunos

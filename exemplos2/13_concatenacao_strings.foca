@@ -1,0 +1,37 @@
+// =============================================
+// Concatenação de Strings
+// O operador + concatena strings, chars
+// e combinações entre eles.
+// =============================================
+
+// String + String
+let s1 : string = "Hello"
+let s2 : string = " World"
+let s3 = s1 + s2
+cout << s3
+
+// String + Char
+let s4 = s1 + '!'
+cout << s4
+
+// Char + String
+let s5 = '>' + s1
+cout << s5
+
+// Char + Char → String
+let s6 = 'A' + 'B'
+cout << s6
+
+// Concatenação com +=
+let frase : string = "FOCA"
+frase += " eh"
+frase += " legal"
+frase += '!'
+cout << frase
+
+// Comparação de strings com operadores relacionais
+let igual = s1 == "Hello"
+cout << igual
+
+let diferente = s1 != s2
+cout << diferente

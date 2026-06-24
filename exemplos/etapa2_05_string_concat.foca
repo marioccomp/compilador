@@ -1,9 +1,9 @@
-string s1 = "hello";
-char c1 = 'w';
-string s2 = s1 + c1;
-string s3 = c1 + s1;
-string s4 = s1 + "world";
-string s5 = 'a' + 'b';
+let s1 : string = "hello";
+let c1 : char = 'w';
+let s2 : string = s1 + c1;
+let s3 : string = c1 + s1;
+let s4 : string = s1 + "world";
+let s5 : string = 'a' + 'b';
 cout << s2;
 cout << s3;
 cout << s4;

@@ -1,0 +1,46 @@
+// =============================================
+// Extra: Operações Matemáticas Avançadas
+// Exponenciação, módulo e funções embutidas.
+// =============================================
+
+// Exponenciação (**)
+let potencia = 2 ** 10
+cout << potencia
+
+let cubo = 3.0 ** 3.0
+cout << cubo
+
+// Módulo (%)
+let resto = 17 % 5
+cout << resto
+
+let par = 10 % 2
+cout << par
+
+// Raiz quadrada
+let raiz = sqrt(144)
+cout << raiz
+
+let raiz2 = sqrt(2)
+cout << raiz2
+
+// Valor absoluto
+let pos = abs(-42)
+cout << pos
+
+let posf = abs(-3.14)
+cout << posf
+
+// Mínimo e máximo
+let menor = min(10, 20)
+cout << menor
+
+let maior = max(10, 20)
+cout << maior
+
+// Combinando operações
+let hipotenusa = sqrt(3.0 ** 2.0 + 4.0 ** 2.0)
+cout << hipotenusa
+
+let clamped = max(0, min(100, 150))
+cout << clamped

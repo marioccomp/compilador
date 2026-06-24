@@ -1,21 +1,21 @@
-int x = 1;
+let x : int = 1;
 switch (x) {
     case 1:
-        int a = 10;
+        let a : int = 10;
     case 2:
-        int b = 20;
+        let b : int = 20;
     default:
-        int c = 30;
+        let c : int = 30;
 }
-char c = 'a';
+let c : char = 'a';
 switch (c) {
     case 'a':
-        int a = 10;
+        let a : int = 10;
     default:
-        int b = 20;
+        let b : int = 20;
 }
-string s = "opt";
+let s : string = "opt";
 switch (s) {
     case "opt":
-        int a = 10;
+        let a : int = 10;
 }

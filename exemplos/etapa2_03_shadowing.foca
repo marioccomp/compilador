@@ -1,6 +1,6 @@
-int x = 100;
+let x : int = 100;
 {
-    int x = 200;
+    let x : int = 200;
     cout << x;
 }
 cout << x;

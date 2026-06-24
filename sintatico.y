@@ -17,6 +17,8 @@ int label_qnt;
 int linha = 1;
 string codigo_gerado;
 string variaveis;
+string variaveis_globais;
+bool declarando_global;
 int chamada_funcao_qnt;
 
 struct variavel
@@ -31,6 +33,7 @@ struct variavel
 	bool eh_matriz;
 	int linhas;
 	int colunas;
+	bool global;
 };
 
 struct argumento
@@ -90,6 +93,7 @@ struct atributos
 	int linhas;
 	int colunas;
 	vector<vector<atributos>> valores_matriz;
+	bool retorna;
 };
 
 int yylex(void);
@@ -122,7 +126,7 @@ void verificarNaoConstante(variavel* var, string nome);
 void verificarNaoVetor(variavel* var, string nome);
 void verificarExpressaoComValor(atributos attr, string contexto);
 string tipo_c(string tipo);
-void addDeclaracao(string declaracao);
+void addDeclaracao(string declaracao, bool global = false);
 string assinatura_funcao(funcao &f, bool com_nome_parametro);
 string gerar_retorno_funcao(funcao &f, atributos ret);
 bool isSubfaixa(string tipo);
@@ -133,6 +137,8 @@ string gerar_verificacao_subfaixa(string nome_var, string tipo);
 string gerar_verificacao_indice_vetor(string indice, int limite, string nome_vetor);
 void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_interno);
 string gerar_verificacao_indice_matriz(string indice_lin, int limite_lin, string indice_col, int limite_col, string nome_matriz);
+atributos gerar_unario_incdec(string nome, string op, bool prefixado);
+
 %}
 
 %token TK_NUM
@@ -180,6 +186,8 @@ string gerar_verificacao_indice_matriz(string indice_lin, int limite_lin, string
 %token TK_MIN
 %token TK_MAX
 %token TK_DOTDOT
+%token TK_GLOBAL
+%token TK_ENDL
 
 %start S
 
@@ -216,10 +224,12 @@ INICIO      :
 CMDS        : CMD
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = $1.retorna;
 			}
             | CMDS FINAIS CMD
 			{
 				$$.traducao = $1.traducao + $3.traducao;
+				$$.retorna = $1.retorna || $3.retorna;
 			}
             ;
 
@@ -239,64 +249,83 @@ CMD			: E
 				$$.traducao = $1.traducao;
 				$$.label = $1.label;
 				$$.tipo = $1.tipo;
+				$$.retorna = false;
 			}
 			|
 			D
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			|
 			BLOCO
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = $1.retorna;
 			}
 			|
 			IF
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = $1.retorna;
 			}
 			|
 			WHILE
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			|
 			DO_WHILE
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			|
 			FOR
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			| BREAK
 			{
 				$$.traducao = $1.traducao;	
+				$$.retorna = false;
 			}
 			| CONTINUE
 			{
 				$$.traducao = $1.traducao;	
+				$$.retorna = false;
 			}
 			| CIN
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			| COUT
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			| SWITCH
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = $1.retorna;
 			}
 			| RETURN
 			{
 				$$.traducao = $1.traducao;
+				$$.retorna = true;
 			}
 			| FUNCAO
 			{
 				$$.traducao = "";
+				$$.retorna = false;
+			}
+			| GLOBAL_D
+			{
+				$$.traducao = $1.traducao;
+				$$.retorna = false;
 			}
 			;
 
@@ -313,14 +342,17 @@ FECHA_BLOCO : '}'
 BLOCO		: ABRE_BLOCO INICIO FECHA_BLOCO
 			{
 				$$.traducao = "";
+				$$.retorna = false;
 			}
 			| ABRE_BLOCO INICIO CMDS FECHA_BLOCO
 			{
 				$$.traducao = $3.traducao;
+				$$.retorna = $3.retorna;
 			}
 			| ABRE_BLOCO INICIO CMDS FINAIS FECHA_BLOCO
 			{
 				$$.traducao = $3.traducao;
+				$$.retorna = $3.retorna;
 			}
 			;
 IF			: TK_IF '(' E ')' QUEBRAS BLOCO  // aqui fiquei com algumas duvidas sobre oq aceitar dentro dos parenteses, aceitar so bool?
@@ -337,6 +369,7 @@ IF			: TK_IF '(' E ')' QUEBRAS BLOCO  // aqui fiquei com algumas duvidas sobre o
 				traducao += "\t" + temp + " = !" + $3.label + ";\n\tif " + "(" + temp + ") goto " + label + ";\n";
 				traducao += $6.traducao + label + ":\n";
 				$$.traducao = traducao;
+				$$.retorna = false;
 			}
 			| TK_IF '(' E ')' QUEBRAS BLOCO TK_ELSE BLOCO
 			{
@@ -356,6 +389,7 @@ IF			: TK_IF '(' E ')' QUEBRAS BLOCO  // aqui fiquei com algumas duvidas sobre o
 				traducao += $6.traducao + "\tgoto " + fim_if + ";\n" + inicio_else + ":\n";
 				traducao += $8.traducao + fim_if + ":\n";
 				$$.traducao = traducao;
+				$$.retorna = $6.retorna && $8.retorna;
 			}
 
 			;
@@ -462,6 +496,10 @@ FOR_ATUAL   :
                 $$.traducao = "";
             }
             | ATRIB
+			{
+				$$.traducao = $1.traducao;
+			}
+            | E
             {
                 $$.traducao = $1.traducao;
             }
@@ -525,6 +563,8 @@ SWITCH      : INICIO_SWITCH INICIO CASES INICIO '}'
                 $$.traducao += "\tgoto " + destino_default + ";\n";
                 $$.traducao += $3.corpo;
                 $$.traducao += fim_switch + ":\n";
+
+                $$.retorna = false;
 
                 pilha_break.pop_back();
                 pilha_switch_expr.pop_back();
@@ -654,6 +694,12 @@ ALL			: TK_ALL
 			;
 INICIO_FUNCAO : TK_FUNC TK_ID '('
 			{
+
+				if(tabelas.size() != 1) {
+					yyerror("Funcao so pode ser declarada no escopo global");
+					exit(1);
+				}
+
 				if(!pilha_funcao.empty()) {
 					yyerror("Nao pode declarar funcao dentro de outra funcao");
 					exit(1);
@@ -729,13 +775,14 @@ FUNCAO     : INICIO_FUNCAO PARAMS_FUNC ')' RETORNO_FUNC QUEBRAS BLOCO
 				string nome_funcao = pilha_funcao.back();
 				funcao &f = funcoes[nome_funcao];
 
-				if(f.retorno_tipado && !f.tem_return) {
-					yyerror("Funcao " + nome_funcao + " foi declarada com retorno " + f.tipo_retorno + ", mas nao possui return");
-					exit(1);
-				}
-
 				if(!f.tem_return && !f.retorno_tipado) {
 					f.tipo_retorno = "void";
+				}
+				else {
+					if(!$6.retorna) {
+						yyerror("Nem todos os caminhos da funcao " + nome_funcao + " retornam valor");
+						exit(1);
+					}
 				}
 
 				f.corpo = $6.traducao;
@@ -762,6 +809,7 @@ RETURN     : TK_RETURN E
 
 				verificarExpressaoComValor($2, "como valor de return");
 				$$.traducao = gerar_retorno_funcao(f, $2);
+				$$.retorna = true;
 			}
 			;
 
@@ -854,7 +902,25 @@ TIPO		: TK_INT
 				$$.tipo = "subfaixa:" + $1.label + ":" + $3.label;
 			}
 
-						;
+			;
+INICIO_GLOBAL : TK_GLOBAL
+			{
+				if(tabelas.size() != 1 || !pilha_funcao.empty()) {
+					yyerror("Variavel global so pode ser declarada no escopo global");
+					exit(1);
+				}
+
+				declarando_global = true;
+			}
+			;
+
+GLOBAL_D    : INICIO_GLOBAL D
+			{
+				declarando_global = false;
+				$$.traducao = $2.traducao;
+				$$.retorna = false;
+			}
+			;
 TIPO_VETOR : TIPO '[' TK_NUM ']'
 			{
 				int tamanho = stoi($3.label);
@@ -987,7 +1053,6 @@ REF_MATRIZ : TK_ID '[' E ']' '[' E ']'
 				$$.traducao = $3.traducao + $6.traducao;
 				$$.traducao += gerar_verificacao_indice_matriz($3.label, var->linhas, $6.label, var->colunas, $1.label);
 
-				// calcula índice unidimensional: i * colunas + j
 				string idx_linha = gentempcode();
 				string idx_final = gentempcode();
 				addVar(idx_linha, "int");
@@ -1141,6 +1206,10 @@ COUT		: TK_COUT TK_LL E
 
 				$$.traducao = $3.traducao;
 				$$.traducao += "\tcout << " + $3.label + ";\n";
+			}
+			| TK_COUT TK_LL TK_ENDL
+			{
+				$$.traducao = "\tcout << endl;\n";
 			}
 			;
 E 			: E TK_POW E
@@ -1495,6 +1564,22 @@ E 			: E TK_POW E
     		{
        			$$ = $2; 
     		}
+			| TK_PP TK_ID
+			{
+				$$ = gerar_unario_incdec($2.label, "++", true);
+			}
+			| TK_MM TK_ID
+			{
+				$$ = gerar_unario_incdec($2.label, "--", true);
+			}
+			| TK_ID TK_PP
+			{
+				$$ = gerar_unario_incdec($1.label, "++", false);
+			}
+			| TK_ID TK_MM
+			{
+				$$ = gerar_unario_incdec($1.label, "--", false);
+			}
 			| '-' E %prec TK_NEG
 			{
 				if(!isNumerico($2.tipo)) {
@@ -1796,7 +1881,6 @@ D			: TK_LET TK_ID ':' TIPO
 							exit(1);
 						}
 
-						// índice unidimensional: i * colunas + j
 						int idx = i * $4.colunas + j;
 						string destino = var + "[" + to_string(idx) + "]";
 						traducao += gerar_atribuicao_valor(destino, "", $4.tipo, valor);
@@ -1807,6 +1891,11 @@ D			: TK_LET TK_ID ':' TIPO
 			}
 			| ATRIB
 			{
+				if(declarando_global) {
+					yyerror("Use global let para declarar variavel global");
+					exit(1);
+				}
+
 				$$.traducao = $1.traducao;
 			}
 			| TK_LET TK_ID ':' TIPO '=' E
@@ -2211,128 +2300,6 @@ ATRIB		: TK_ID '=' E
 					$$.traducao = traducao;
 				}
 			}
-			| TK_ID TK_PP
-			{
-				tuple<bool, bool, variavel*> exists = existsVar($1.label, $1.tipo);
-
-				variavel* var = get<2>(exists);
-				
-
-
-				if(!get<0>(exists)) {
-					yyerror("Variavel '" + $1.label + "' nao foi declarada");
-					exit(1);
-				}
-
-				else if(!isNumerico(var->tipo)) {
-					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador ++");
-					exit(1);
-				}
-
-				verificarNaoConstante(var, $1.label);
-				verificarNaoVetor(var, $1.label);
-
-				if(var->tipo == "float") {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
-				}
-				else {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
-				}
-
-				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
-			}
-			| TK_ID TK_MM
-			{
-				tuple<bool, bool, variavel*> exists = existsVar($1.label, "any");
-
-				if(!get<0>(exists)) {
-					yyerror("Variavel '" + $1.label + "' nao foi declarada");
-					exit(1);
-				}
-
-				variavel* var = get<2>(exists);
-
-				verificarNaoConstante(var, $1.label);
-				verificarNaoVetor(var, $1.label);
-
-				if(!isNumerico(var->tipo)) {
-					yyerror("A variavel " + $1.label + " nao eh numerica para usar o operador --");
-					exit(1);
-				}
-
-				if(var->tipo == "float") {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1.0;\n";
-				}
-				else {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
-				}
-
-				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
-			}
-			| TK_PP TK_ID
-			{
-				tuple<bool, bool, variavel*> exists = existsVar($2.label, "any");
-
-				if(!get<0>(exists)) {
-					yyerror("Variavel '" + $2.label + "' nao foi declarada");
-					exit(1);
-				}
-
-				variavel* var = get<2>(exists);
-
-				verificarNaoConstante(var, $2.label);
-				verificarNaoVetor(var, $1.label);
-
-				if(!isNumerico(var->tipo)) {
-					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador ++");
-					exit(1);
-				}
-
-				$$.label = var->nome_interno;
-				$$.tipo = var->tipo;
-				$$.tam = "";
-
-				if(var->tipo == "float") {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1.0;\n";
-				}
-				else {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " + 1;\n";
-				}
-
-				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
-			}
-			| TK_MM TK_ID
-			{
-				tuple<bool, bool, variavel*> exists = existsVar($2.label, "any");
-
-				if(!get<0>(exists)) {
-					yyerror("Variavel '" + $2.label + "' nao foi declarada");
-					exit(1);
-				}
-
-				variavel* var = get<2>(exists);
-
-				verificarNaoConstante(var, $2.label);
-				verificarNaoVetor(var, $2.label);
-
-				if(!isNumerico(var->tipo)) {
-					yyerror("A variavel " + $2.label + " nao eh numerica para usar o operador --");
-					exit(1);
-				}
-
-				$$.label = var->nome_interno;
-				$$.tipo = var->tipo;
-				$$.tam = "";
-
-				if(var->tipo == "float") {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1.0;\n";
-				}
-				else {
-					$$.traducao = "\t" + var->nome_interno + " = " + var->nome_interno + " - 1;\n";
-				}
-
-				$$.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
-			}
 			;
 %%
 
@@ -2606,14 +2573,62 @@ string tipo_c(string tipo) {
 	return tipo;
 }
 
-void addDeclaracao(string declaracao) {
-	if(!pilha_funcao.empty()) {
+void addDeclaracao(string declaracao, bool global) {
+	if(global) {
+		variaveis_globais += declaracao;
+	}
+	else if(!pilha_funcao.empty()) {
 		string nome_funcao = pilha_funcao.back();
 		funcoes[nome_funcao].variaveis += declaracao;
 	}
 	else {
 		variaveis += declaracao;
 	}
+}
+
+atributos gerar_unario_incdec(string nome, string op, bool prefixado) {
+	atributos r;
+
+	tuple<bool, bool, variavel*> exists = existsVar(nome, "any");
+
+	if(!get<0>(exists)) {
+		yyerror("Variavel '" + nome + "' nao foi declarada");
+		exit(1);
+	}
+
+	variavel* var = get<2>(exists);
+
+	verificarVarTipada(var, nome);
+	verificarNaoConstante(var, nome);
+	verificarNaoVetor(var, nome);
+
+	if(!isNumerico(var->tipo)) {
+		yyerror("A variavel " + nome + " nao eh numerica para usar o operador " + op);
+		exit(1);
+	}
+
+	r.label = gentempcode();
+	addVar(r.label, var->tipo);
+
+	r.tipo = var->tipo;
+	r.tam = "";
+	r.traducao = "";
+
+	string sinal = op == "++" ? "+" : "-";
+	string um = tipo_c(var->tipo) == "float" ? "1.0" : "1";
+
+	if(prefixado) {
+		r.traducao += "\t" + var->nome_interno + " = " + var->nome_interno + " " + sinal + " " + um + ";\n";
+		r.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
+		r.traducao += "\t" + r.label + " = " + var->nome_interno + ";\n";
+	}
+	else {
+		r.traducao += "\t" + r.label + " = " + var->nome_interno + ";\n";
+		r.traducao += "\t" + var->nome_interno + " = " + var->nome_interno + " " + sinal + " " + um + ";\n";
+		r.traducao += gerar_verificacao_subfaixa(var->nome_interno, var->tipo);
+	}
+
+	return r;
 }
 
 string assinatura_funcao(funcao &f, bool com_nome_parametro) {
@@ -2697,16 +2712,16 @@ void tiparVarDinamica(variavel* var, string tipo) {
 	var->tipo = tipo;
 
 	if(tipo == "bool") {
-		addDeclaracao("\tint " + var->nome_interno + ";\n");
+	addDeclaracao("\tint " + var->nome_interno + ";\n", var->global);
 	}
 	else if(tipo == "string") {
 		var->tam = var->nome_interno + "_tam";
-		addDeclaracao("\tchar* " + var->nome_interno + ";\n");
-		addDeclaracao("\tint " + var->nome_interno + "_tam;\n");
+		addDeclaracao("\tchar* " + var->nome_interno + ";\n", var->global);
+		addDeclaracao("\tint " + var->nome_interno + "_tam;\n", var->global);
 	}
 	else {
 		var->tam = "";
-		addDeclaracao("\t" + tipo_c(tipo) + " " + var->nome_interno + ";\n");
+		addDeclaracao("\t" + tipo_c(tipo) + " " + var->nome_interno + ";\n", var->global);
 	}
 }
 
@@ -2723,7 +2738,9 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		if(exists) {
 			yyerror("Ja existe uma variavel com esse nome");
 			exit(1);
-		};
+		}
+
+		bool eh_global = declarando_global;
 
 		variavel v;
 		v.nome_interno = nome_interno;
@@ -2736,6 +2753,7 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		v.eh_matriz = false;
 		v.linhas = 0;
 		v.colunas = 0;
+		v.global = eh_global;
 
 		tabelas.back()[nome] = v;
 
@@ -2744,25 +2762,26 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 		}
 
 		if(tipo == "bool") {
-			addDeclaracao("\tint " + nome_interno + ";\n");
+			addDeclaracao("\tint " + nome_interno + ";\n", eh_global);
 			return;
 		}
 
 		if(tipo == "string") {
 			v.tam = nome_interno + "_tam";
 			v.valor = "";
+			v.global = eh_global;
 
-			addDeclaracao("\tchar* " + nome_interno + ";\n");
-			addDeclaracao("\tint " + nome_interno + "_tam;\n");
+			addDeclaracao("\tchar* " + nome_interno + ";\n", eh_global);
+			addDeclaracao("\tint " + nome_interno + "_tam;\n", eh_global);
 
 			tabelas.back()[nome] = v;
 			return;
 		}
 
-		addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + ";\n");
+		addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + ";\n", eh_global);
 		return;
 	}
-	
+
 	variavel var;
 	var.tipo = tipo;
 	var.nome_interno = nome;
@@ -2774,28 +2793,30 @@ void addVar(string nome, string tipo, bool interno, string nome_interno) {
 	var.eh_matriz = false;
 	var.linhas = 0;
 	var.colunas = 0;
+	var.global = false;
 
 	string nome_temp = get_chave_temp(); 
 
 	tabelas.back()[nome_temp] = var;
 
 	if(tipo == "bool") {
-		addDeclaracao("\tint " + nome + ";\n");
+		addDeclaracao("\tint " + nome + ";\n", false);
 		return;
 	}
 
 	if(tipo == "string") {
 		var.tam = nome + "_tam";
 		var.valor = "";
+		var.global = false;
 
-		addDeclaracao("\tchar* " + nome + ";\n");
-		addDeclaracao("\tint " + nome + "_tam;\n");
+		addDeclaracao("\tchar* " + nome + ";\n", false);
+		addDeclaracao("\tint " + nome + "_tam;\n", false);
 
 		tabelas.back()[nome_temp] = var;
 		return;
 	}
 
-	addDeclaracao("\t" + tipo_c(tipo) + " " + nome + ";\n");
+	addDeclaracao("\t" + tipo_c(tipo) + " " + nome + ";\n", false);
 }
 
 void addVetor(string nome, string tipo, int tamanho, string nome_interno) {
@@ -2809,6 +2830,8 @@ void addVetor(string nome, string tipo, int tamanho, string nome_interno) {
 		exit(1);
 	}
 
+	bool eh_global = declarando_global;
+
 	variavel v;
 	v.nome_interno = nome_interno;
 	v.tipo = tipo;
@@ -2820,10 +2843,14 @@ void addVetor(string nome, string tipo, int tamanho, string nome_interno) {
 	v.eh_matriz = false;
 	v.linhas = 0;
 	v.colunas = 0;
+	v.global = eh_global;
 
 	tabelas.back()[nome] = v;
 
-	addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(tamanho) + "];\n");
+	addDeclaracao(
+		"\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(tamanho) + "];\n",
+		eh_global
+	);
 }
 
 void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_interno) {
@@ -2837,6 +2864,8 @@ void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_in
 		exit(1);
 	}
 
+	bool eh_global = declarando_global;
+
 	variavel v;
 	v.nome_interno = nome_interno;
 	v.tipo = tipo;
@@ -2848,11 +2877,16 @@ void addMatriz(string nome, string tipo, int linhas, int colunas, string nome_in
 	v.eh_matriz = true;
 	v.linhas = linhas;
 	v.colunas = colunas;
+	v.global = eh_global;
 
 	tabelas.back()[nome] = v;
 
 	int total = linhas * colunas;
-	addDeclaracao("\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(total) + "];\n");
+
+	addDeclaracao(
+		"\t" + tipo_c(tipo) + " " + nome_interno + "[" + to_string(total) + "];\n",
+		eh_global
+	);
 }
 
 string gerar_verificacao_indice_matriz(string indice_lin, int limite_lin, string indice_col, int limite_col, string nome_matriz) {
@@ -3056,17 +3090,21 @@ bool operacao_compativel(string t1, string t2) {
 }
 
 tuple<bool, bool, variavel*> existsVar(string nome, string tipo) {
-
 	for(int i = tabelas.size() - 1; i >= 0; i--) {
-		
 		bool exists = tabelas[i].find(nome) != tabelas[i].end();
+
 		if(exists) {
-			return {true, tabelas[i][nome].tipo == tipo, &tabelas[i][nome]};
+			variavel* var = &tabelas[i][nome];
+
+			if(!pilha_funcao.empty() && i == 0 && !var->global) {
+				return {false, false, nullptr};
+			}
+
+			return {true, var->tipo == tipo, var};
 		}
 	}
-	
+
 	return {false, false, nullptr};
-	
 }
 
 bool exists_var_escopo_atual(string nome) {
@@ -3109,6 +3147,7 @@ void addParametroFuncao(string nome, string tipo) {
 	v.eh_matriz = false;
 	v.linhas = 0;
 	v.colunas = 0;
+	v.global = false;
 
 	if(tipo == "string") {
 		v.tam = interno + "_tam";
@@ -3423,12 +3462,15 @@ int main(int argc, char* argv[])
 	var_chave_qnt = 0;
 	label_qnt = 0;
 	chamada_funcao_qnt = 0;
+	declarando_global = false;
+
 	abrir_escopo();
 
 	if (yyparse() == 0) {
 		string codigo_funcoes = montar_codigo_funcoes();
 
 		cout << cabecalho();
+		cout << variaveis_globais << endl;
 		cout << codigo_funcoes;
 		cout << "int main(void) {\n";
 		cout << variaveis << endl;

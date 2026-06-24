@@ -1,5 +1,5 @@
-int x = 1;
+let x : int = 1;
 switch (x) {
     case 'a':
-        int y = 2;
+        let y : int = 2;
 }

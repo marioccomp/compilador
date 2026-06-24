@@ -85,10 +85,12 @@ NUM {DIGITO}+
 (?i:continue)  {return TK_CONTINUE;}
 (?i:cin)    {return TK_CIN;}
 (?i:cout)    {return TK_COUT;}
+(?i:endl) { return TK_ENDL; }
 (?i:func)   {return TK_FUNC;}
 (?i:return) {return TK_RETURN;}
 (?i:let)    {return TK_LET;}
 (?i:const)    {return TK_CONST;}
+(?i:global) { return TK_GLOBAL; }
 ">>"        {return TK_RR;}
 "<<"        {return TK_LL;}
 \"[^\"]*\" { yylval.label = yytext; return TK_STRING_LIT;}

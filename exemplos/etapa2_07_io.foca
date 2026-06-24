@@ -1,8 +1,8 @@
-int i;
-float f;
-char c;
-string s;
-bool b;
+let i : int ;
+let f : float ;
+let c : char ;
+let s : string ;
+let b : bool ;
 cin >> i;
 cin >> f;
 cin >> c;

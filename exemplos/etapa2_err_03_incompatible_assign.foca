@@ -1,2 +1,2 @@
-int i = 10;
+let i : int = 10;
 i = "abc";

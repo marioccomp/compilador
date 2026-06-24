@@ -1,0 +1,28 @@
+// =============================================
+// Extra: Inferência de Tipos Adiada
+// A variável é declarada sem tipo e sem valor.
+// O tipo é inferido na primeira atribuição.
+// Após isso, o tipo fica fixo.
+// =============================================
+
+// Declaração sem tipo
+let x
+// x ainda não tem tipo aqui
+
+// Primeira atribuição define o tipo como int
+x = 42
+cout << x
+
+// Agora x é int, e aceita operações de int
+x = x + 10
+cout << x
+
+// Outro exemplo com string
+let mensagem
+mensagem = "Hello FOCA"
+cout << mensagem
+
+// Outro com float
+let valor
+valor = 9.99
+cout << valor

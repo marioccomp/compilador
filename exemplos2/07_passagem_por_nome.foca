@@ -1,0 +1,31 @@
+// =============================================
+// Extra: Passagem de Parâmetros por Nome
+// Argumentos podem ser passados usando o nome
+// do parâmetro, em qualquer ordem.
+// =============================================
+
+// Função com parâmetros nomeáveis
+func dividir(dividendo : float, divisor : float) : float {
+    return dividendo / divisor
+}
+
+// Chamada posicional (tradicional)
+let r1 = dividir(10.0, 3.0)
+cout << r1
+
+// Chamada por nome (mesma ordem)
+let r2 = dividir(dividendo = 10.0, divisor = 3.0)
+cout << r2
+
+// Chamada por nome (ordem invertida!)
+let r3 = dividir(divisor = 3.0, dividendo = 10.0)
+cout << r3
+
+// Outro exemplo: criando um retângulo
+func area_retangulo(largura : float, altura : float) : float {
+    return largura * altura
+}
+
+// Por nome, fica mais claro o que cada argumento significa
+let area = area_retangulo(altura = 5.0, largura = 3.0)
+cout << area

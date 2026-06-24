@@ -1,4 +1,4 @@
-int i;
+let i : int ;
 for (i = 0; 123; i++) {
-    int x;
+    let x : int ;
 }

@@ -1,5 +1,1 @@
-func subfaixa():1..20 {
-    return 30;
-}
-
-subfaixa()
+cout << "asda\n"

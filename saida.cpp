@@ -202,15 +202,13 @@ int main(void) {
 	int t2;
 	int t3;
 	int t4;
-	int t5;
 
-	t1 = 8;
-	t2 = t1;
-	t3 = t2 < 0;
-	t4 = t2 > 10;
-	t5 = t3 || t4;
-	if (!t5) goto fim_subfaixa1;
-	printf("Erro: valor fora da subfaixa [0..10]\n");
+	t1 = read_int();
+	t2 = t1 < 0;
+	t3 = t1 > 9;
+	t4 = t2 || t3;
+	if (!t4) goto fim_subfaixa1;
+	printf("Erro: valor fora da subfaixa [0..9]\n");
 	exit(1);
 fim_subfaixa1:
 	return 0;

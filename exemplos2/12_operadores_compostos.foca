@@ -1,0 +1,48 @@
+// =============================================
+// Operadores Compostos e Unários
+// +=, -=, *=, /=, ++, --
+// =============================================
+
+let x : int = 10
+
+// Operadores compostos
+x += 5
+cout << x
+
+x -= 3
+cout << x
+
+x *= 2
+cout << x
+
+x /= 4
+cout << x
+
+// Operadores unários: pré e pós incremento/decremento
+let a : int = 5
+
+// Pós-incremento: retorna o valor ANTES de incrementar
+let b = a++
+cout << b
+cout << a
+
+// Pré-incremento: incrementa ANTES de retornar
+let c = ++a
+cout << c
+cout << a
+
+// Pós-decremento
+let d = a--
+cout << d
+cout << a
+
+// Pré-decremento
+let e = --a
+cout << e
+cout << a
+
+// Concatenação com +=
+let s : string = "Hello"
+s += " World"
+s += '!'
+cout << s
